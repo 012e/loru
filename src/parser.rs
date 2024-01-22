@@ -66,7 +66,7 @@ fn parse_unary(parser: &mut Parser) -> ParseResult<Expr> {
 		_ => None,
 	} {
 		let right = parse_unary(parser)?;
-		return Ok(Expr::Unary(operator, Box::new(right)));
+		return Ok(Expr::Unary(operator.try_into()?, Box::new(right)));
 	}
 	parse_primary(parser)
 }

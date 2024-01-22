@@ -25,12 +25,18 @@ pub enum Operator {
 	LessEqual,
 }
 
+#[derive(Debug, PartialEq, Clone, EnumDisplay)]
+pub enum UnaryOperator {
+	Minus,
+	Bang,
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum Expr {
 	Binary(Box<Expr>, Operator, Box<Expr>),
 	Grouping(Box<Expr>),
 	Literal(Literal),
-	Unary(Token, Box<Expr>),
+	Unary(UnaryOperator, Box<Expr>),
 }
 
 impl TryFrom<Token> for Operator {
@@ -48,6 +54,18 @@ impl TryFrom<Token> for Operator {
 			Token::GreaterEqual => Ok(Operator::GreaterEqual),
 			Token::Less => Ok(Operator::Less),
 			Token::LessEqual => Ok(Operator::LessEqual),
+			_ => Err(Self::Error::UnexpectedToken(token)),
+		}
+	}
+}
+
+impl TryFrom<Token> for UnaryOperator {
+	type Error = parser::Error;
+
+	fn try_from(token: Token) -> Result<Self, Self::Error> {
+		match token {
+			Token::Minus => Ok(UnaryOperator::Minus),
+			Token::Bang => Ok(UnaryOperator::Bang),
 			_ => Err(Self::Error::UnexpectedToken(token)),
 		}
 	}
