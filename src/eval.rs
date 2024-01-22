@@ -18,30 +18,30 @@ pub enum Error {
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 pub trait Evalable {
-	fn eval(&self) -> Result<Literal, Error>;
+	fn eval(self) -> Result<Literal, Error>;
 }
 
 trait TryApplyBinary {
 	type Error;
 	fn try_apply_binary(
-		&self,
-		op: &Operator,
-		other: &Literal,
+		self,
+		op: Operator,
+		other: Literal,
 	) -> Result<Literal, Self::Error>;
 }
 
 trait TryApplyUnary {
 	type Error;
-	fn try_apply_unary(&self, op: &UnaryOperator) -> Result<Literal, Self::Error>;
+	fn try_apply_unary(self, op: UnaryOperator) -> Result<Literal, Self::Error>;
 }
 
 impl Evalable for ast::Literal {
-	fn eval(&self) -> Result<Literal, Error> {
+	fn eval(self) -> Result<Literal, Error> {
 		Ok(self.clone())
 	}
 }
 
-fn compare_numbers(left: &f64, op: &Operator, right: &f64) -> Literal {
+fn compare_numbers(left: f64, op: Operator, right: f64) -> Literal {
 	match op {
 		Operator::BangEqual => {
 			if left != right {
@@ -89,7 +89,7 @@ fn compare_numbers(left: &f64, op: &Operator, right: &f64) -> Literal {
 	}
 }
 
-fn compare_strings(left: &String, op: &Operator, right: &String) -> Literal {
+fn compare_strings(left: String, op: Operator, right: String) -> Literal {
 	match op {
 		Operator::BangEqual => {
 			if left != right {
@@ -112,13 +112,13 @@ fn compare_strings(left: &String, op: &Operator, right: &String) -> Literal {
 impl TryApplyUnary for Literal {
 	type Error = Error;
 
-	fn try_apply_unary(&self, op: &UnaryOperator) -> Result<Literal, Self::Error> {
-		match (op, self) {
-			(&UnaryOperator::Minus, Literal::Number(n)) => Ok(Literal::Number(-n)),
-			(&UnaryOperator::Bang, Literal::False) => Ok(Literal::True),
-			(&UnaryOperator::Bang, Literal::True) => Ok(Literal::False),
-			(&UnaryOperator::Bang, Literal::Nil) => Ok(Literal::True),
-			_ => Err(Error::CantApplyUnaryOperator(self.clone())),
+	fn try_apply_unary(self, op: UnaryOperator) -> Result<Literal, Self::Error> {
+		match (op, &self) {
+			(UnaryOperator::Minus, Literal::Number(n)) => Ok(Literal::Number(-n)),
+			(UnaryOperator::Bang, Literal::False) => Ok(Literal::True),
+			(UnaryOperator::Bang, Literal::True) => Ok(Literal::False),
+			(UnaryOperator::Bang, Literal::Nil) => Ok(Literal::True),
+			_ => Err(Error::CantApplyUnaryOperator(self)),
 		}
 	}
 }
@@ -127,15 +127,15 @@ impl TryApplyBinary for Literal {
 	type Error = Error;
 
 	fn try_apply_binary(
-		&self,
-		op: &Operator,
-		other: &Literal,
+		self,
+		op: Operator,
+		other: Literal,
 	) -> Result<Literal, Self::Error> {
 		// Check if literals are of the same type.
 		// WARN: `Literal::False` and `Literal::True` are different types.
 		if (!matches!(self, Literal::True | Literal::False)
 			&& !matches!(other, Literal::True | Literal::False))
-			&& (std::mem::discriminant(self) != std::mem::discriminant(other))
+			&& (std::mem::discriminant(&self) != std::mem::discriminant(&other))
 		{
 			return Err(Error::UnmatchedType(
 				self.clone(),
@@ -144,20 +144,20 @@ impl TryApplyBinary for Literal {
 			));
 		}
 
-		match (op, self) {
-			(&Operator::Plus, Literal::Number(n)) => match other {
+		match (&op, self) {
+			(Operator::Plus, Literal::Number(n)) => match other {
 				Literal::Number(r) => Ok(Literal::Number(n + r)),
 				_ => unreachable!(),
 			},
-			(&Operator::Minus, Literal::Number(n)) => match other {
+			(Operator::Minus, Literal::Number(n)) => match other {
 				Literal::Number(r) => Ok(Literal::Number(n - r)),
 				_ => unreachable!(),
 			},
-			(&Operator::Star, Literal::Number(n)) => match other {
+			(Operator::Star, Literal::Number(n)) => match other {
 				Literal::Number(r) => Ok(Literal::Number(n * r)),
 				_ => unreachable!(),
 			},
-			(&Operator::Slash, Literal::Number(n)) => match other {
+			(Operator::Slash, Literal::Number(n)) => match other {
 				// TODO: this is a hack, fix it, rust is getting away from using `match`
 				// with floating point literals
 				#[allow(illegal_floating_point_literal_pattern)]
@@ -165,21 +165,21 @@ impl TryApplyBinary for Literal {
 				Literal::Number(r) => Ok(Literal::Number(n / r)),
 				_ => unreachable!(),
 			},
-			(&Operator::BangEqual, Literal::Number(l))
-			| (&Operator::EqualEqual, Literal::Number(l))
-			| (&Operator::Greater, Literal::Number(l))
-			| (&Operator::GreaterEqual, Literal::Number(l))
-			| (&Operator::Less, Literal::Number(l))
-			| (&Operator::LessEqual, Literal::Number(l)) => match other {
+			(Operator::BangEqual, Literal::Number(l))
+			| (Operator::EqualEqual, Literal::Number(l))
+			| (Operator::Greater, Literal::Number(l))
+			| (Operator::GreaterEqual, Literal::Number(l))
+			| (Operator::Less, Literal::Number(l))
+			| (Operator::LessEqual, Literal::Number(l)) => match other {
 				Literal::Number(r) => Ok(compare_numbers(l, op, r)),
 				_ => unreachable!(),
 			},
-			(&Operator::Plus, Literal::String(s)) => match other {
-				Literal::String(r) => Ok(Literal::String(s.to_owned() + r)),
+			(Operator::Plus, Literal::String(s)) => match other {
+				Literal::String(r) => Ok(Literal::String(s + &r)),
 				_ => unreachable!(),
 			},
-			(&Operator::EqualEqual, Literal::String(l))
-			| (&Operator::BangEqual, Literal::String(l)) => match other {
+			(Operator::EqualEqual, Literal::String(l))
+			| (Operator::BangEqual, Literal::String(l)) => match other {
 				Literal::String(r) => Ok(compare_strings(l, op, r)),
 				_ => unreachable!(),
 			},
@@ -189,13 +189,13 @@ impl TryApplyBinary for Literal {
 }
 
 impl Evalable for ast::Expr {
-	fn eval(&self) -> Result<Literal, Error> {
+	fn eval(self) -> Result<Literal, Error> {
 		match self {
 			ast::Expr::Literal(lit) => lit.eval(),
 			ast::Expr::Binary(lexpr, op, rexpr) => {
 				let left_result = lexpr.eval()?;
 				let right_result = rexpr.eval()?;
-				left_result.try_apply_binary(op, &right_result)
+				left_result.try_apply_binary(op, right_result)
 			}
 			ast::Expr::Unary(op, expr) => {
 				let result = expr.eval()?;
@@ -217,8 +217,6 @@ mod tests {
 			Operator::Star,
 			Box::new(ast::Expr::Literal(Literal::Number(2.0))),
 		);
-		let result = expr.eval();
-		assert!(result.is_ok());
 		assert_eq!(expr.eval().unwrap(), Literal::Number(16.0));
 	}
 
