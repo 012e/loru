@@ -1,21 +1,34 @@
 use thiserror::Error;
 
-use crate::token::Token;
+use crate::token::{GetTokenInfo, Info, Token, TokenInfo};
 
 #[derive(Debug, Error)]
 pub enum Error {
-	#[error("[Line {line}]Unexpected character: {character}")]
-	UnexpectedCharacter { character: char, line: u32 },
+	#[error("[Line {line}] Unexpected character: {character}")]
+	UnexpectedCharacter { character: char, line: usize },
 
 	#[error("[Line {line}] Unterminated string")]
-	UnterminatedString { line: u32 },
+	UnterminatedString { line: usize },
 }
 
 pub struct Scanner<'a> {
 	source: &'a Vec<char>,
-	current_line: u32,
+	current_line: usize,
 	current: usize,
 	start: usize,
+}
+
+pub type ScanResult<T> = Result<T, Error>;
+
+impl<'a> GetTokenInfo for Scanner<'a> {
+	fn get_token(&self, token: Token) -> TokenInfo {
+		TokenInfo(
+			token,
+			Info {
+				line: self.current_line,
+			},
+		)
+	}
 }
 
 impl<'a> Scanner<'a> {
@@ -48,7 +61,7 @@ impl<'a> Scanner<'a> {
 		Some(c)
 	}
 
-	fn handle_number(&mut self) -> Result<Option<Token>, Error> {
+	fn handle_number(&mut self) -> Result<Option<TokenInfo>, Error> {
 		while let Some(c) = self.peek()
 			&& c.is_ascii_digit()
 		{
@@ -64,16 +77,18 @@ impl<'a> Scanner<'a> {
 		{
 			self.advance();
 		}
-		Ok(Some(Token::Number(
-			self.source[self.start..self.current]
-				.iter()
-				.collect::<String>()
-				.parse::<f64>()
-				.unwrap(),
-		)))
+		Ok(Some(
+			self.get_token(Token::Number(
+				self.source[self.start..self.current]
+					.iter()
+					.collect::<String>()
+					.parse::<f64>()
+					.unwrap(),
+			)),
+		))
 	}
 
-	fn handle_identifier(&mut self) -> Result<Option<Token>, Error> {
+	fn handle_identifier(&mut self) -> Result<Option<TokenInfo>, Error> {
 		while let Some(c) = self.peek()
 			&& c.is_alphabetic()
 		{
@@ -83,35 +98,37 @@ impl<'a> Scanner<'a> {
 			.iter()
 			.collect::<String>();
 		match &iden[..] {
-			"and" => Ok(Some(Token::And)),
-			"class" => Ok(Some(Token::Class)),
-			"else" => Ok(Some(Token::Else)),
-			"false" => Ok(Some(Token::False)),
-			"for" => Ok(Some(Token::For)),
-			"fun" => Ok(Some(Token::Fun)),
-			"if" => Ok(Some(Token::If)),
-			"nil" => Ok(Some(Token::Nil)),
-			"or" => Ok(Some(Token::Or)),
-			"print" => Ok(Some(Token::Print)),
-			"return" => Ok(Some(Token::Return)),
-			"super" => Ok(Some(Token::Super)),
-			"this" => Ok(Some(Token::This)),
-			"true" => Ok(Some(Token::True)),
-			"var" => Ok(Some(Token::Var)),
-			"while" => Ok(Some(Token::While)),
-			_ => Ok(Some(Token::Identifier)),
+			"and" => Ok(Some(self.get_token(Token::And))),
+			"class" => Ok(Some(self.get_token(Token::Class))),
+			"else" => Ok(Some(self.get_token(Token::Else))),
+			"false" => Ok(Some(self.get_token(Token::False))),
+			"for" => Ok(Some(self.get_token(Token::For))),
+			"fun" => Ok(Some(self.get_token(Token::Fun))),
+			"if" => Ok(Some(self.get_token(Token::If))),
+			"nil" => Ok(Some(self.get_token(Token::Nil))),
+			"or" => Ok(Some(self.get_token(Token::Or))),
+			"print" => Ok(Some(self.get_token(Token::Print))),
+			"return" => Ok(Some(self.get_token(Token::Return))),
+			"super" => Ok(Some(self.get_token(Token::Super))),
+			"this" => Ok(Some(self.get_token(Token::This))),
+			"true" => Ok(Some(self.get_token(Token::True))),
+			"var" => Ok(Some(self.get_token(Token::Var))),
+			"while" => Ok(Some(self.get_token(Token::While))),
+			_ => Ok(Some(self.get_token(Token::Identifier))),
 		}
 	}
 
-	fn handle_string(&mut self) -> Result<Option<Token>, Error> {
+	fn handle_string(&mut self) -> Result<Option<TokenInfo>, Error> {
 		while let Some(c) = self.peek() {
 			if *c == '"' {
 				self.advance();
-				return Ok(Some(Token::String(
-					self.source[self.start + 1..self.current - 1]
-						.iter()
-						.collect::<String>(),
-				)));
+				return Ok(Some(
+					self.get_token(Token::String(
+						self.source[self.start + 1..self.current - 1]
+							.iter()
+							.collect::<String>(),
+					)),
+				));
 			} else if *c == '\n' {
 				self.current_line += 1;
 			}
@@ -136,7 +153,7 @@ impl<'a> Scanner<'a> {
 		}
 	}
 
-	pub fn scan_next(&mut self) -> Result<Option<Token>, Error> {
+	pub fn scan_next(&mut self) -> Result<Option<TokenInfo>, Error> {
 		self.start = self.current;
 		let c = match self.advance() {
 			Some(c) => c,
@@ -148,42 +165,42 @@ impl<'a> Scanner<'a> {
 				self.current_line += 1;
 				Ok(None)
 			}
-			'(' => Ok(Some(Token::LeftParen)),
-			')' => Ok(Some(Token::RightParen)),
-			'{' => Ok(Some(Token::LeftBrace)),
-			'}' => Ok(Some(Token::RightBrace)),
-			',' => Ok(Some(Token::Comma)),
-			'.' => Ok(Some(Token::Dot)),
-			'-' => Ok(Some(Token::Minus)),
-			'+' => Ok(Some(Token::Plus)),
-			';' => Ok(Some(Token::Semicolon)),
-			'*' => Ok(Some(Token::Star)),
+			'(' => Ok(Some(self.get_token(Token::LeftParen))),
+			')' => Ok(Some(self.get_token(Token::RightParen))),
+			'{' => Ok(Some(self.get_token(Token::LeftBrace))),
+			'}' => Ok(Some(self.get_token(Token::RightBrace))),
+			',' => Ok(Some(self.get_token(Token::Comma))),
+			'.' => Ok(Some(self.get_token(Token::Dot))),
+			'-' => Ok(Some(self.get_token(Token::Minus))),
+			'+' => Ok(Some(self.get_token(Token::Plus))),
+			';' => Ok(Some(self.get_token(Token::Semicolon))),
+			'*' => Ok(Some(self.get_token(Token::Star))),
 			'!' => {
 				if self.next_to_be('=') {
-					Ok(Some(Token::BangEqual))
+					Ok(Some(self.get_token(Token::BangEqual)))
 				} else {
-					Ok(Some(Token::Bang))
+					Ok(Some(self.get_token(Token::Bang)))
 				}
 			}
 			'=' => {
 				if self.next_to_be('=') {
-					Ok(Some(Token::EqualEqual))
+					Ok(Some(self.get_token(Token::EqualEqual)))
 				} else {
-					Ok(Some(Token::Equal))
+					Ok(Some(self.get_token(Token::Equal)))
 				}
 			}
 			'<' => {
 				if self.next_to_be('=') {
-					Ok(Some(Token::LessEqual))
+					Ok(Some(self.get_token(Token::LessEqual)))
 				} else {
-					Ok(Some(Token::Less))
+					Ok(Some(self.get_token(Token::Less)))
 				}
 			}
 			'>' => {
 				if self.next_to_be('=') {
-					Ok(Some(Token::GreaterEqual))
+					Ok(Some(self.get_token(Token::GreaterEqual)))
 				} else {
-					Ok(Some(Token::Greater))
+					Ok(Some(self.get_token(Token::Greater)))
 				}
 			}
 			'/' => {
@@ -193,7 +210,7 @@ impl<'a> Scanner<'a> {
 					}
 					Ok(None)
 				} else {
-					Ok(Some(Token::Slash))
+					Ok(Some(self.get_token(Token::Slash)))
 				}
 			}
 			'"' => self.handle_string(),
@@ -212,8 +229,8 @@ impl<'a> Scanner<'a> {
 		}
 	}
 
-	pub fn scan(&mut self) -> (Vec<Token>, Vec<Error>) {
-		let mut tokens: Vec<Token> = Vec::new();
+	pub fn scan(&mut self) -> (Vec<TokenInfo>, Vec<Error>) {
+		let mut tokens: Vec<TokenInfo> = Vec::new();
 		let mut errors: Vec<Error> = Vec::new();
 		while !self.is_at_end() {
 			let token = self.scan_next();
@@ -223,14 +240,30 @@ impl<'a> Scanner<'a> {
 				Err(error) => errors.push(error),
 			}
 		}
-		tokens.push(Token::Eof);
+		tokens.push(self.get_token(Token::Eof));
 		(tokens, errors)
 	}
 }
 
 #[cfg(test)]
 mod tests {
+	use paste::paste;
+
 	use super::*;
+	use crate::token::Token::*;
+
+	macro_rules! t {
+		($token:expr, $line:expr) => {
+			paste! {
+				TokenInfo(
+					$token,
+					Info {
+						line: $line,
+					},
+				)
+			}
+		};
+	}
 
 	fn string_to_vec_char(s: &str) -> Vec<char> {
 		s.chars().collect::<Vec<_>>()
@@ -277,9 +310,15 @@ mod tests {
 		let string_to_vec_char = string_to_vec_char("1 + 2 + 3.14");
 		let mut scanner = Scanner::new(&string_to_vec_char);
 		let (tokens, errors) = scanner.scan();
-		let expected_tokens: Vec<Token> = {
-			use Token::*;
-			vec![Number(1.0), Plus, Number(2.00), Plus, Number(3.14), Eof]
+		let expected_tokens: Vec<TokenInfo> = {
+			vec![
+				t!(Number(1.0), 1),
+				t!(Plus, 1),
+				t!(Number(2.00), 1),
+				t!(Plus, 1),
+				t!(Number(3.14), 1),
+				t!(Eof, 1),
+			]
 		};
 		assert_eq!(tokens, expected_tokens);
 		assert_eq!(errors.len(), 0);
@@ -297,42 +336,42 @@ if (a != b) {
 		))
 		.scan();
 		assert!(errors.is_empty());
-		let expected_token: Vec<Token> = {
+		let expected_token: Vec<TokenInfo> = {
 			use Token::*;
 			vec![
-				Minus,
-				Equal,
-				Plus,
-				Bang,
-				Slash,
-				Star,
-				Less,
-				Greater,
-				LessEqual,
-				EqualEqual,
-				BangEqual,
-				Equal,
-				Semicolon,
-				Var,
-				Identifier,
-				Equal,
-				Number(10.0),
-				Semicolon,
-				If,
-				LeftParen,
-				Identifier,
-				BangEqual,
-				Identifier,
-				RightParen,
-				LeftBrace,
-				Print,
-				String("a is not equal to b".to_string()),
-				Semicolon,
-				Print,
-				String("xin chào thế giới❤️❤️".to_string()),
-				Semicolon,
-				RightBrace,
-				Eof,
+				t!(Minus, 1),
+				t!(Equal, 1),
+				t!(Plus, 1),
+				t!(Bang, 1),
+				t!(Slash, 1),
+				t!(Star, 1),
+				t!(Less, 1),
+				t!(Greater, 1),
+				t!(LessEqual, 1),
+				t!(EqualEqual, 1),
+				t!(BangEqual, 1),
+				t!(Equal, 1),
+				t!(Semicolon, 1),
+				t!(Var, 2),
+				t!(Identifier, 2),
+				t!(Equal, 2),
+				t!(Number(10.0), 2),
+				t!(Semicolon, 2),
+				t!(If, 3),
+				t!(LeftParen, 3),
+				t!(Identifier, 3),
+				t!(BangEqual, 3),
+				t!(Identifier, 3),
+				t!(RightParen, 3),
+				t!(LeftBrace, 3),
+				t!(Print, 4),
+				t!(String("a is not equal to b".to_string()), 4),
+				t!(Semicolon, 4),
+				t!(Print, 5),
+				t!(String("xin chào thế giới❤️❤️".to_string()), 5),
+				t!(Semicolon, 5),
+				t!(RightBrace, 6),
+				t!(Eof, 6),
 			]
 		};
 		// assert_eq!(tokens.len(), expected_token.len());

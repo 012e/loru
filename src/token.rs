@@ -46,6 +46,18 @@ pub enum Token {
 	Eof,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct Info {
+	pub line: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TokenInfo(pub Token, pub Info);
+
+pub trait GetTokenInfo {
+	fn get_token(&self, token: Token) -> TokenInfo;
+}
+
 #[allow(dead_code)]
 impl Token {
 	pub fn is_literal(&self) -> bool {
