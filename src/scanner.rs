@@ -223,7 +223,7 @@ impl<'a> Scanner<'a> {
 				Err(error) => errors.push(error),
 			}
 		}
-		tokens.push(Token::EOF);
+		tokens.push(Token::Eof);
 		(tokens, errors)
 	}
 }
@@ -279,7 +279,7 @@ mod tests {
 		let (tokens, errors) = scanner.scan();
 		let expected_tokens: Vec<Token> = {
 			use Token::*;
-			vec![Number(1.0), Plus, Number(2.00), Plus, Number(3.14), EOF]
+			vec![Number(1.0), Plus, Number(2.00), Plus, Number(3.14), Eof]
 		};
 		assert_eq!(tokens, expected_tokens);
 		assert_eq!(errors.len(), 0);
@@ -332,7 +332,7 @@ if (a != b) {
 				String("xin chào thế giới❤️❤️".to_string()),
 				Semicolon,
 				RightBrace,
-				EOF,
+				Eof,
 			]
 		};
 		// assert_eq!(tokens.len(), expected_token.len());

@@ -142,7 +142,7 @@ mod tests {
 			Token::Number(2.0),
 			Token::Star,
 			Token::Number(3.0),
-			Token::EOF,
+			Token::Eof,
 		];
 		let expr = parse(tokens);
 		assert!(expr.is_ok());
@@ -177,7 +177,7 @@ mod tests {
 			Token::Star,
 			Token::Number(3.0),
 			Token::RightParen,
-			Token::EOF,
+			Token::Eof,
 		];
 		let expr = parse(tokens);
 		assert!(expr.is_ok());
@@ -212,7 +212,7 @@ mod tests {
 
 	#[test]
 	fn test_expr_missing_right_paren() {
-		let tokens = vec![Token::LeftParen, Token::Number(1.0), Token::EOF];
+		let tokens = vec![Token::LeftParen, Token::Number(1.0), Token::Eof];
 		let expr = parse(tokens);
 		assert!(expr.is_err());
 		assert_eq!(expr.unwrap_err(), Error::MissingRightParen);

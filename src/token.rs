@@ -43,57 +43,46 @@ pub enum Token {
 	Var,
 	While,
 
-	EOF,
+	Eof,
 }
 
+#[allow(dead_code)]
 impl Token {
 	pub fn is_literal(&self) -> bool {
-		match self {
-			Token::String { .. } | Token::Number { .. } => true,
-			_ => false,
-		}
+		matches!(self, Token::String(_) | Token::Number(_))
 	}
 
 	pub fn is_unary(&self) -> bool {
-		match self {
-			Token::Bang | Token::Minus => true,
-			_ => false,
-		}
+		matches!(self, Token::Bang | Token::Minus)
 	}
 
 	pub fn is_binary(&self) -> bool {
-		match self {
+		matches!(
+			self,
 			Token::BangEqual
-			| Token::EqualEqual
-			| Token::Greater
-			| Token::GreaterEqual
-			| Token::Less
-			| Token::LessEqual
-			| Token::Minus
-			| Token::Plus
-			| Token::Slash
-			| Token::Star => true,
-			_ => false,
-		}
+				| Token::EqualEqual
+				| Token::Greater | Token::GreaterEqual
+				| Token::Less | Token::LessEqual
+				| Token::Minus | Token::Plus
+				| Token::Slash | Token::Star
+		)
 	}
 
 	pub fn is_statement(&self) -> bool {
-		match self {
+		matches!(
+			self,
 			Token::Print
-			| Token::Var
-			| Token::For
-			| Token::If
-			| Token::While
-			| Token::Return => true,
-			_ => false,
-		}
+				| Token::Var | Token::If
+				| Token::While | Token::For
+				| Token::Return
+		)
 	}
 }
 
 impl std::fmt::Display for Token {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			Token::EOF => f.write_str("EOF"),
+			Token::Eof => f.write_str("EOF"),
 			Token::LeftBrace => f.write_str("{"),
 			Token::RightBrace => f.write_str("}"),
 			Token::LeftParen => f.write_str("("),
