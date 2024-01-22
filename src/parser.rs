@@ -23,11 +23,11 @@ impl Parser {
 	fn advance(&mut self) -> Token {
 		let current = self.peek();
 		self.current += 1;
-		return current;
+		current
 	}
 
 	fn peek(&self) -> Token {
-		return self.tokens[self.current].clone();
+		self.tokens[self.current].clone()
 	}
 }
 
@@ -35,11 +35,11 @@ pub type ParseResult<T> = Result<T, Error>;
 
 pub fn parse(tokens: Vec<Token>) -> ParseResult<Expr> {
 	let mut parser = Parser::new(tokens);
-	return parse_expression(&mut parser);
+	parse_expression(&mut parser)
 }
 
 fn parse_expression(parser: &mut Parser) -> ParseResult<Expr> {
-	return parse_equality(parser);
+	parse_equality(parser)
 }
 
 fn parse_primary(parser: &mut Parser) -> ParseResult<Expr> {
@@ -68,7 +68,7 @@ fn parse_unary(parser: &mut Parser) -> ParseResult<Expr> {
 		let right = parse_unary(parser)?;
 		return Ok(Expr::Unary(operator, Box::new(right)));
 	}
-	Ok(parse_primary(parser)?)
+	parse_primary(parser)
 }
 
 fn parse_factor(parser: &mut Parser) -> ParseResult<Expr> {

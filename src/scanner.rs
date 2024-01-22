@@ -45,12 +45,12 @@ impl<'a> Scanner<'a> {
 		}
 		let c = &self.source[self.current];
 		self.current += 1;
-		return Some(c);
+		Some(c)
 	}
 
 	fn handle_number(&mut self) -> Result<Option<Token>, Error> {
 		while let Some(c) = self.peek()
-			&& c.is_digit(10)
+			&& c.is_ascii_digit()
 		{
 			self.advance();
 		}
@@ -60,7 +60,7 @@ impl<'a> Scanner<'a> {
 			self.advance();
 		}
 		while let Some(c) = self.peek()
-			&& c.is_digit(10)
+			&& c.is_ascii_digit()
 		{
 			self.advance();
 		}
@@ -127,12 +127,12 @@ impl<'a> Scanner<'a> {
 			Some(c) => {
 				if *c == expected {
 					self.advance();
-					return true;
+					true
 				} else {
-					return false;
+					false
 				}
 			}
-			None => return false,
+			None => false,
 		}
 	}
 
@@ -188,7 +188,7 @@ impl<'a> Scanner<'a> {
 			}
 			'/' => {
 				if self.next_to_be('/') {
-					while let Some(_) = self.peek() {
+					while self.peek().is_some() {
 						self.advance();
 					}
 					Ok(None)
@@ -198,8 +198,8 @@ impl<'a> Scanner<'a> {
 			}
 			'"' => self.handle_string(),
 			_ => {
-				if c.is_digit(10) {
-					return self.handle_number();
+				if c.is_ascii_digit() {
+					self.handle_number()
 				} else if c.is_alphabetic() {
 					return self.handle_identifier();
 				} else {
