@@ -61,11 +61,8 @@ fn parse_primary(parser: &mut Parser) -> ParseResult<Expr> {
 		Token::String(s) => Ok(Expr::Literal(Literal::String(s))),
 		Token::LeftParen => {
 			let expr = parse_expression(parser)?;
-			match parser.advance() {
-				TokenInfo {
-					token: Token::RightParen,
-					..
-				} => Ok(Expr::Grouping(Box::new(expr))),
+			match parser.advance().token {
+				Token::RightParen => Ok(Expr::Grouping(Box::new(expr))),
 				_ => Err(Error::MissingRightParen(parser.previous())),
 			}
 		}
@@ -74,14 +71,8 @@ fn parse_primary(parser: &mut Parser) -> ParseResult<Expr> {
 }
 
 fn parse_unary(parser: &mut Parser) -> ParseResult<Expr> {
-	if let Some(operator) = match parser.peek() {
-		TokenInfo {
-			token: Token::Bang, ..
-		}
-		| TokenInfo {
-			token: Token::Minus,
-			..
-		} => Some(parser.advance()),
+	if let Some(operator) = match parser.peek().token {
+		Token::Bang | Token::Minus => Some(parser.advance()),
 		_ => None,
 	} {
 		let right = parse_unary(parser)?;
@@ -105,14 +96,8 @@ fn parse_factor(parser: &mut Parser) -> ParseResult<Expr> {
 fn parse_term(parser: &mut Parser) -> ParseResult<Expr> {
 	let mut expr = parse_factor(parser)?;
 
-	while let Some(operator) = match parser.peek() {
-		TokenInfo {
-			token: Token::Minus,
-			..
-		}
-		| TokenInfo {
-			token: Token::Plus, ..
-		} => Some(parser.advance()),
+	while let Some(operator) = match parser.peek().token {
+		Token::Minus | Token::Plus => Some(parser.advance()),
 		_ => None,
 	} {
 		let right = parse_factor(parser)?;
@@ -125,30 +110,13 @@ fn parse_term(parser: &mut Parser) -> ParseResult<Expr> {
 fn parse_comparison(parser: &mut Parser) -> ParseResult<Expr> {
 	let mut expr = parse_term(parser)?;
 
-	while let Some(operator) = match parser.peek() {
-		TokenInfo {
-			token: Token::Greater,
-			..
-		}
-		| TokenInfo {
-			token: Token::GreaterEqual,
-			..
-		}
-		| TokenInfo {
-			token: Token::Less, ..
-		}
-		| TokenInfo {
-			token: Token::LessEqual,
-			..
-		}
-		| TokenInfo {
-			token: Token::BangEqual,
-			..
-		}
-		| TokenInfo {
-			token: Token::EqualEqual,
-			..
-		} => Some(parser.advance()),
+	while let Some(operator) = match parser.peek().token {
+		Token::Greater
+		| Token::GreaterEqual
+		| Token::Less
+		| Token::LessEqual
+		| Token::BangEqual
+		| Token::EqualEqual => Some(parser.advance()),
 		_ => None,
 	} {
 		let right = parse_term(parser)?;
@@ -160,15 +128,8 @@ fn parse_comparison(parser: &mut Parser) -> ParseResult<Expr> {
 fn parse_equality(parser: &mut Parser) -> ParseResult<Expr> {
 	let mut expr = parse_comparison(parser)?;
 
-	while let Some(operator) = match parser.peek() {
-		TokenInfo {
-			token: Token::BangEqual,
-			..
-		}
-		| TokenInfo {
-			token: Token::EqualEqual,
-			..
-		} => Some(parser.advance()),
+	while let Some(operator) = match parser.peek().token {
+		Token::BangEqual | Token::EqualEqual => Some(parser.advance()),
 		_ => None,
 	} {
 		let right = parse_comparison(parser)?;
@@ -242,6 +203,7 @@ mod tests {
 			Operator::Plus,
 			Box::new(Expr::Literal(Literal::Number(9.0))),
 		)));
+
 		// (2 * (9 + 9) * 3)
 		let inner2 = Expr::Grouping(Box::new(Expr::Binary(
 			Box::new(Expr::Binary(
@@ -268,13 +230,13 @@ mod tests {
 		let tokens = vec![
 			token!(Token::LeftParen, 1),
 			token!(Token::Number(1.0), 1),
-			token!(Token::Eof, 1),
+			token!(Token::Semicolon, 1),
 		];
 		let expr = parse(tokens);
 		assert!(expr.is_err());
 		assert_eq!(
 			expr.unwrap_err(),
-			Error::MissingRightParen(TokenInfo::new(Token::Eof, Info::new(1)))
+			Error::MissingRightParen(TokenInfo::new(Token::Semicolon, Info::new(1)))
 		);
 	}
 }

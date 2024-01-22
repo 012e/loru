@@ -133,7 +133,10 @@ impl TryApplyBinary for Literal {
 	) -> Result<Literal, Self::Error> {
 		// Check if literals are of the same type.
 		// WARN: `Literal::False` and `Literal::True` are different types.
-		if std::mem::discriminant(self) != std::mem::discriminant(other) {
+		if (!matches!(self, Literal::True | Literal::False)
+			&& !matches!(other, Literal::True | Literal::False))
+			&& (std::mem::discriminant(self) != std::mem::discriminant(other))
+		{
 			return Err(Error::UnmatchedType(
 				self.clone(),
 				op.clone(),
