@@ -52,10 +52,27 @@ pub struct Info {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct TokenInfo(pub Token, pub Info);
+pub struct TokenInfo {
+	pub token: Token,
+	pub info: Info,
+}
 
-pub trait GetTokenInfo {
-	fn get_token(&self, token: Token) -> TokenInfo;
+impl TokenInfo {
+	pub fn new(token: Token, info: Info) -> TokenInfo {
+		TokenInfo { token, info }
+	}
+}
+
+impl Info {
+	pub fn new(line: usize) -> Info {
+		Info { line }
+	}
+}
+
+pub trait GetInfo {
+	type Target;
+	type Source;
+	fn get_info(&self, from: Self::Source) -> Self::Target;
 }
 
 #[allow(dead_code)]
@@ -89,6 +106,18 @@ impl Token {
 				| Token::Return
 		)
 	}
+}
+
+#[macro_export]
+macro_rules! token {
+	($token:expr, $line:expr) => {
+		paste! {
+			TokenInfo::new(
+				$token,
+				Info::new($line),
+			)
+		}
+	};
 }
 
 impl std::fmt::Display for Token {

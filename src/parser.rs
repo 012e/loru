@@ -1,39 +1,49 @@
 use thiserror::Error;
 
-use crate::{ast::Expr, ast::Literal, token::Token};
+use crate::{
+	ast::Expr,
+	ast::Literal,
+	token::{Token, TokenInfo},
+};
 
 #[derive(Error, Debug, PartialEq)]
 pub enum Error {
-	#[error("Unexpected token {0:?}")]
-	UnexpectedToken(Token),
-	#[error("Missing ')' after expression")]
-	MissingRightParen,
+	#[error("[line {}] Unexpected token {}", .0.info.line, .0.token)]
+	UnexpectedToken(TokenInfo),
+
+	// will match the last token in the expression
+	#[error("[line {}] Missing ')' after expression", .0.info.line)]
+	MissingRightParen(TokenInfo),
 }
 
 pub struct Parser {
-	tokens: Vec<Token>,
+	tokens: Vec<TokenInfo>,
 	current: usize,
 }
 
 impl Parser {
-	fn new(tokens: Vec<Token>) -> Parser {
+	fn new(tokens: Vec<TokenInfo>) -> Parser {
 		Parser { tokens, current: 0 }
 	}
 
-	fn advance(&mut self) -> Token {
+	fn advance(&mut self) -> TokenInfo {
 		let current = self.peek();
 		self.current += 1;
 		current
 	}
 
-	fn peek(&self) -> Token {
+	fn peek(&self) -> TokenInfo {
 		self.tokens[self.current].clone()
+	}
+
+	fn previous(&self) -> TokenInfo {
+		self.tokens[self.current - 1].clone()
 	}
 }
 
 pub type ParseResult<T> = Result<T, Error>;
 
-pub fn parse(tokens: Vec<Token>) -> ParseResult<Expr> {
+pub fn parse(tokens: Vec<TokenInfo>) -> ParseResult<Expr> {
 	let mut parser = Parser::new(tokens);
 	parse_expression(&mut parser)
 }
@@ -43,7 +53,7 @@ fn parse_expression(parser: &mut Parser) -> ParseResult<Expr> {
 }
 
 fn parse_primary(parser: &mut Parser) -> ParseResult<Expr> {
-	match parser.advance() {
+	match parser.advance().token {
 		Token::False => Ok(Expr::Literal(Literal::False)),
 		Token::True => Ok(Expr::Literal(Literal::True)),
 		Token::Nil => Ok(Expr::Literal(Literal::Nil)),
@@ -52,8 +62,11 @@ fn parse_primary(parser: &mut Parser) -> ParseResult<Expr> {
 		Token::LeftParen => {
 			let expr = parse_expression(parser)?;
 			match parser.advance() {
-				Token::RightParen => Ok(Expr::Grouping(Box::new(expr))),
-				_ => Err(Error::MissingRightParen),
+				TokenInfo {
+					token: Token::RightParen,
+					..
+				} => Ok(Expr::Grouping(Box::new(expr))),
+				_ => Err(Error::MissingRightParen(parser.previous())),
 			}
 		}
 		_ => Err(Error::UnexpectedToken(parser.peek())),
@@ -62,7 +75,13 @@ fn parse_primary(parser: &mut Parser) -> ParseResult<Expr> {
 
 fn parse_unary(parser: &mut Parser) -> ParseResult<Expr> {
 	if let Some(operator) = match parser.peek() {
-		Token::Bang | Token::Minus => Some(parser.advance()),
+		TokenInfo {
+			token: Token::Bang, ..
+		}
+		| TokenInfo {
+			token: Token::Minus,
+			..
+		} => Some(parser.advance()),
 		_ => None,
 	} {
 		let right = parse_unary(parser)?;
@@ -73,7 +92,7 @@ fn parse_unary(parser: &mut Parser) -> ParseResult<Expr> {
 
 fn parse_factor(parser: &mut Parser) -> ParseResult<Expr> {
 	let mut expr = parse_unary(parser)?;
-	while let Some(operator) = match parser.peek() {
+	while let Some(operator) = match parser.peek().token {
 		Token::Slash | Token::Star => Some(parser.advance()),
 		_ => None,
 	} {
@@ -87,7 +106,13 @@ fn parse_term(parser: &mut Parser) -> ParseResult<Expr> {
 	let mut expr = parse_factor(parser)?;
 
 	while let Some(operator) = match parser.peek() {
-		Token::Minus | Token::Plus => Some(parser.advance()),
+		TokenInfo {
+			token: Token::Minus,
+			..
+		}
+		| TokenInfo {
+			token: Token::Plus, ..
+		} => Some(parser.advance()),
 		_ => None,
 	} {
 		let right = parse_factor(parser)?;
@@ -101,12 +126,29 @@ fn parse_comparison(parser: &mut Parser) -> ParseResult<Expr> {
 	let mut expr = parse_term(parser)?;
 
 	while let Some(operator) = match parser.peek() {
-		Token::Greater
-		| Token::GreaterEqual
-		| Token::Less
-		| Token::LessEqual
-		| Token::BangEqual
-		| Token::EqualEqual => Some(parser.advance()),
+		TokenInfo {
+			token: Token::Greater,
+			..
+		}
+		| TokenInfo {
+			token: Token::GreaterEqual,
+			..
+		}
+		| TokenInfo {
+			token: Token::Less, ..
+		}
+		| TokenInfo {
+			token: Token::LessEqual,
+			..
+		}
+		| TokenInfo {
+			token: Token::BangEqual,
+			..
+		}
+		| TokenInfo {
+			token: Token::EqualEqual,
+			..
+		} => Some(parser.advance()),
 		_ => None,
 	} {
 		let right = parse_term(parser)?;
@@ -119,7 +161,14 @@ fn parse_equality(parser: &mut Parser) -> ParseResult<Expr> {
 	let mut expr = parse_comparison(parser)?;
 
 	while let Some(operator) = match parser.peek() {
-		Token::BangEqual | Token::EqualEqual => Some(parser.advance()),
+		TokenInfo {
+			token: Token::BangEqual,
+			..
+		}
+		| TokenInfo {
+			token: Token::EqualEqual,
+			..
+		} => Some(parser.advance()),
 		_ => None,
 	} {
 		let right = parse_comparison(parser)?;
@@ -131,18 +180,22 @@ fn parse_equality(parser: &mut Parser) -> ParseResult<Expr> {
 
 #[cfg(test)]
 mod tests {
+	use paste::paste;
+
 	use super::*;
+	use crate::token;
+	use crate::token::Info;
 	use crate::{ast::Operator, token::Token};
 
 	#[test]
 	fn test_simple_expr_parse() {
 		let tokens = vec![
-			Token::Number(1.0),
-			Token::Plus,
-			Token::Number(2.0),
-			Token::Star,
-			Token::Number(3.0),
-			Token::Eof,
+			token!(Token::Number(1.0), 1),
+			token!(Token::Plus, 1),
+			token!(Token::Number(2.0), 1),
+			token!(Token::Star, 1),
+			token!(Token::Number(3.0), 1),
+			token!(Token::Eof, 1),
 		];
 		let expr = parse(tokens);
 		assert!(expr.is_ok());
@@ -164,20 +217,20 @@ mod tests {
 	fn test_nested_expression() {
 		// 1 + (2 * (9 + 9) * 3)
 		let tokens = vec![
-			Token::Number(1.0),
-			Token::Plus,
-			Token::LeftParen,
-			Token::Number(2.0),
-			Token::Star,
-			Token::LeftParen,
-			Token::Number(9.0),
-			Token::Plus,
-			Token::Number(9.0),
-			Token::RightParen,
-			Token::Star,
-			Token::Number(3.0),
-			Token::RightParen,
-			Token::Eof,
+			token!(Token::Number(1.0), 1),
+			token!(Token::Plus, 1),
+			token!(Token::LeftParen, 1),
+			token!(Token::Number(2.0), 1),
+			token!(Token::Star, 1),
+			token!(Token::LeftParen, 1),
+			token!(Token::Number(9.0), 1),
+			token!(Token::Plus, 1),
+			token!(Token::Number(9.0), 1),
+			token!(Token::RightParen, 1),
+			token!(Token::Star, 1),
+			token!(Token::Number(3.0), 1),
+			token!(Token::RightParen, 1),
+			token!(Token::Eof, 1),
 		];
 		let expr = parse(tokens);
 		assert!(expr.is_ok());
@@ -212,9 +265,16 @@ mod tests {
 
 	#[test]
 	fn test_expr_missing_right_paren() {
-		let tokens = vec![Token::LeftParen, Token::Number(1.0), Token::Eof];
+		let tokens = vec![
+			token!(Token::LeftParen, 1),
+			token!(Token::Number(1.0), 1),
+			token!(Token::Eof, 1),
+		];
 		let expr = parse(tokens);
 		assert!(expr.is_err());
-		assert_eq!(expr.unwrap_err(), Error::MissingRightParen);
+		assert_eq!(
+			expr.unwrap_err(),
+			Error::MissingRightParen(TokenInfo::new(Token::Eof, Info::new(1)))
+		);
 	}
 }

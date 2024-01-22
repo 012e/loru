@@ -19,7 +19,6 @@ fn repl() -> ! {
 		let source: &Vec<char> = &line.chars().collect::<Vec<_>>();
 		let (tokens, errors) = crate::scanner::Scanner::new(source).scan();
 		assert!(errors.is_empty());
-		let tokens = tokens.into_iter().map(|t| t.0).collect::<Vec<_>>();
 		match parser::parse(tokens) {
 			Ok(expr) => println!("{:?}", expr.eval()),
 			Err(e) => println!("parsing error: {:?}", e),

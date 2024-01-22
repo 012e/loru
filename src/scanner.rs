@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::token::{GetTokenInfo, Info, Token, TokenInfo};
+use crate::token::{GetInfo, Info, Token, TokenInfo};
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -18,16 +18,12 @@ pub struct Scanner<'a> {
 	start: usize,
 }
 
-pub type ScanResult<T> = Result<T, Error>;
+impl<'a> GetInfo for Scanner<'a> {
+	type Source = Token;
+	type Target = TokenInfo;
 
-impl<'a> GetTokenInfo for Scanner<'a> {
-	fn get_token(&self, token: Token) -> TokenInfo {
-		TokenInfo(
-			token,
-			Info {
-				line: self.current_line,
-			},
-		)
+	fn get_info(&self, token: Token) -> TokenInfo {
+		TokenInfo::new(token, Info::new(self.current_line))
 	}
 }
 
@@ -78,7 +74,7 @@ impl<'a> Scanner<'a> {
 			self.advance();
 		}
 		Ok(Some(
-			self.get_token(Token::Number(
+			self.get_info(Token::Number(
 				self.source[self.start..self.current]
 					.iter()
 					.collect::<String>()
@@ -98,23 +94,23 @@ impl<'a> Scanner<'a> {
 			.iter()
 			.collect::<String>();
 		match &iden[..] {
-			"and" => Ok(Some(self.get_token(Token::And))),
-			"class" => Ok(Some(self.get_token(Token::Class))),
-			"else" => Ok(Some(self.get_token(Token::Else))),
-			"false" => Ok(Some(self.get_token(Token::False))),
-			"for" => Ok(Some(self.get_token(Token::For))),
-			"fun" => Ok(Some(self.get_token(Token::Fun))),
-			"if" => Ok(Some(self.get_token(Token::If))),
-			"nil" => Ok(Some(self.get_token(Token::Nil))),
-			"or" => Ok(Some(self.get_token(Token::Or))),
-			"print" => Ok(Some(self.get_token(Token::Print))),
-			"return" => Ok(Some(self.get_token(Token::Return))),
-			"super" => Ok(Some(self.get_token(Token::Super))),
-			"this" => Ok(Some(self.get_token(Token::This))),
-			"true" => Ok(Some(self.get_token(Token::True))),
-			"var" => Ok(Some(self.get_token(Token::Var))),
-			"while" => Ok(Some(self.get_token(Token::While))),
-			_ => Ok(Some(self.get_token(Token::Identifier))),
+			"and" => Ok(Some(self.get_info(Token::And))),
+			"class" => Ok(Some(self.get_info(Token::Class))),
+			"else" => Ok(Some(self.get_info(Token::Else))),
+			"false" => Ok(Some(self.get_info(Token::False))),
+			"for" => Ok(Some(self.get_info(Token::For))),
+			"fun" => Ok(Some(self.get_info(Token::Fun))),
+			"if" => Ok(Some(self.get_info(Token::If))),
+			"nil" => Ok(Some(self.get_info(Token::Nil))),
+			"or" => Ok(Some(self.get_info(Token::Or))),
+			"print" => Ok(Some(self.get_info(Token::Print))),
+			"return" => Ok(Some(self.get_info(Token::Return))),
+			"super" => Ok(Some(self.get_info(Token::Super))),
+			"this" => Ok(Some(self.get_info(Token::This))),
+			"true" => Ok(Some(self.get_info(Token::True))),
+			"var" => Ok(Some(self.get_info(Token::Var))),
+			"while" => Ok(Some(self.get_info(Token::While))),
+			_ => Ok(Some(self.get_info(Token::Identifier))),
 		}
 	}
 
@@ -123,7 +119,7 @@ impl<'a> Scanner<'a> {
 			if *c == '"' {
 				self.advance();
 				return Ok(Some(
-					self.get_token(Token::String(
+					self.get_info(Token::String(
 						self.source[self.start + 1..self.current - 1]
 							.iter()
 							.collect::<String>(),
@@ -165,42 +161,42 @@ impl<'a> Scanner<'a> {
 				self.current_line += 1;
 				Ok(None)
 			}
-			'(' => Ok(Some(self.get_token(Token::LeftParen))),
-			')' => Ok(Some(self.get_token(Token::RightParen))),
-			'{' => Ok(Some(self.get_token(Token::LeftBrace))),
-			'}' => Ok(Some(self.get_token(Token::RightBrace))),
-			',' => Ok(Some(self.get_token(Token::Comma))),
-			'.' => Ok(Some(self.get_token(Token::Dot))),
-			'-' => Ok(Some(self.get_token(Token::Minus))),
-			'+' => Ok(Some(self.get_token(Token::Plus))),
-			';' => Ok(Some(self.get_token(Token::Semicolon))),
-			'*' => Ok(Some(self.get_token(Token::Star))),
+			'(' => Ok(Some(self.get_info(Token::LeftParen))),
+			')' => Ok(Some(self.get_info(Token::RightParen))),
+			'{' => Ok(Some(self.get_info(Token::LeftBrace))),
+			'}' => Ok(Some(self.get_info(Token::RightBrace))),
+			',' => Ok(Some(self.get_info(Token::Comma))),
+			'.' => Ok(Some(self.get_info(Token::Dot))),
+			'-' => Ok(Some(self.get_info(Token::Minus))),
+			'+' => Ok(Some(self.get_info(Token::Plus))),
+			';' => Ok(Some(self.get_info(Token::Semicolon))),
+			'*' => Ok(Some(self.get_info(Token::Star))),
 			'!' => {
 				if self.next_to_be('=') {
-					Ok(Some(self.get_token(Token::BangEqual)))
+					Ok(Some(self.get_info(Token::BangEqual)))
 				} else {
-					Ok(Some(self.get_token(Token::Bang)))
+					Ok(Some(self.get_info(Token::Bang)))
 				}
 			}
 			'=' => {
 				if self.next_to_be('=') {
-					Ok(Some(self.get_token(Token::EqualEqual)))
+					Ok(Some(self.get_info(Token::EqualEqual)))
 				} else {
-					Ok(Some(self.get_token(Token::Equal)))
+					Ok(Some(self.get_info(Token::Equal)))
 				}
 			}
 			'<' => {
 				if self.next_to_be('=') {
-					Ok(Some(self.get_token(Token::LessEqual)))
+					Ok(Some(self.get_info(Token::LessEqual)))
 				} else {
-					Ok(Some(self.get_token(Token::Less)))
+					Ok(Some(self.get_info(Token::Less)))
 				}
 			}
 			'>' => {
 				if self.next_to_be('=') {
-					Ok(Some(self.get_token(Token::GreaterEqual)))
+					Ok(Some(self.get_info(Token::GreaterEqual)))
 				} else {
-					Ok(Some(self.get_token(Token::Greater)))
+					Ok(Some(self.get_info(Token::Greater)))
 				}
 			}
 			'/' => {
@@ -210,7 +206,7 @@ impl<'a> Scanner<'a> {
 					}
 					Ok(None)
 				} else {
-					Ok(Some(self.get_token(Token::Slash)))
+					Ok(Some(self.get_info(Token::Slash)))
 				}
 			}
 			'"' => self.handle_string(),
@@ -240,7 +236,7 @@ impl<'a> Scanner<'a> {
 				Err(error) => errors.push(error),
 			}
 		}
-		tokens.push(self.get_token(Token::Eof));
+		tokens.push(self.get_info(Token::Eof));
 		(tokens, errors)
 	}
 }
@@ -252,14 +248,12 @@ mod tests {
 	use super::*;
 	use crate::token::Token::*;
 
-	macro_rules! t {
+	macro_rules! token {
 		($token:expr, $line:expr) => {
 			paste! {
-				TokenInfo(
+				TokenInfo::new(
 					$token,
-					Info {
-						line: $line,
-					},
+					Info::new ($line),
 				)
 			}
 		};
@@ -312,12 +306,12 @@ mod tests {
 		let (tokens, errors) = scanner.scan();
 		let expected_tokens: Vec<TokenInfo> = {
 			vec![
-				t!(Number(1.0), 1),
-				t!(Plus, 1),
-				t!(Number(2.00), 1),
-				t!(Plus, 1),
-				t!(Number(3.14), 1),
-				t!(Eof, 1),
+				token!(Number(1.0), 1),
+				token!(Plus, 1),
+				token!(Number(2.00), 1),
+				token!(Plus, 1),
+				token!(Number(3.14), 1),
+				token!(Eof, 1),
 			]
 		};
 		assert_eq!(tokens, expected_tokens);
@@ -339,39 +333,39 @@ if (a != b) {
 		let expected_token: Vec<TokenInfo> = {
 			use Token::*;
 			vec![
-				t!(Minus, 1),
-				t!(Equal, 1),
-				t!(Plus, 1),
-				t!(Bang, 1),
-				t!(Slash, 1),
-				t!(Star, 1),
-				t!(Less, 1),
-				t!(Greater, 1),
-				t!(LessEqual, 1),
-				t!(EqualEqual, 1),
-				t!(BangEqual, 1),
-				t!(Equal, 1),
-				t!(Semicolon, 1),
-				t!(Var, 2),
-				t!(Identifier, 2),
-				t!(Equal, 2),
-				t!(Number(10.0), 2),
-				t!(Semicolon, 2),
-				t!(If, 3),
-				t!(LeftParen, 3),
-				t!(Identifier, 3),
-				t!(BangEqual, 3),
-				t!(Identifier, 3),
-				t!(RightParen, 3),
-				t!(LeftBrace, 3),
-				t!(Print, 4),
-				t!(String("a is not equal to b".to_string()), 4),
-				t!(Semicolon, 4),
-				t!(Print, 5),
-				t!(String("xin chào thế giới❤️❤️".to_string()), 5),
-				t!(Semicolon, 5),
-				t!(RightBrace, 6),
-				t!(Eof, 6),
+				token!(Minus, 1),
+				token!(Equal, 1),
+				token!(Plus, 1),
+				token!(Bang, 1),
+				token!(Slash, 1),
+				token!(Star, 1),
+				token!(Less, 1),
+				token!(Greater, 1),
+				token!(LessEqual, 1),
+				token!(EqualEqual, 1),
+				token!(BangEqual, 1),
+				token!(Equal, 1),
+				token!(Semicolon, 1),
+				token!(Var, 2),
+				token!(Identifier, 2),
+				token!(Equal, 2),
+				token!(Number(10.0), 2),
+				token!(Semicolon, 2),
+				token!(If, 3),
+				token!(LeftParen, 3),
+				token!(Identifier, 3),
+				token!(BangEqual, 3),
+				token!(Identifier, 3),
+				token!(RightParen, 3),
+				token!(LeftBrace, 3),
+				token!(Print, 4),
+				token!(String("a is not equal to b".to_string()), 4),
+				token!(Semicolon, 4),
+				token!(Print, 5),
+				token!(String("xin chào thế giới❤️❤️".to_string()), 5),
+				token!(Semicolon, 5),
+				token!(RightBrace, 6),
+				token!(Eof, 6),
 			]
 		};
 		// assert_eq!(tokens.len(), expected_token.len());

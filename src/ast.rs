@@ -1,6 +1,9 @@
 use enum_display::EnumDisplay;
 
-use crate::{parser, token::Token};
+use crate::{
+	parser,
+	token::{Token, TokenInfo},
+};
 
 #[derive(Debug, PartialEq, Clone, EnumDisplay)]
 pub enum Literal {
@@ -39,11 +42,11 @@ pub enum Expr {
 	Unary(UnaryOperator, Box<Expr>),
 }
 
-impl TryFrom<Token> for Operator {
+impl TryFrom<TokenInfo> for Operator {
 	type Error = parser::Error;
 
-	fn try_from(token: Token) -> Result<Self, Self::Error> {
-		match token {
+	fn try_from(token: TokenInfo) -> Result<Self, Self::Error> {
+		match token.token {
 			Token::Minus => Ok(Operator::Minus),
 			Token::Plus => Ok(Operator::Plus),
 			Token::Slash => Ok(Operator::Slash),
@@ -59,11 +62,11 @@ impl TryFrom<Token> for Operator {
 	}
 }
 
-impl TryFrom<Token> for UnaryOperator {
+impl TryFrom<TokenInfo> for UnaryOperator {
 	type Error = parser::Error;
 
-	fn try_from(token: Token) -> Result<Self, Self::Error> {
-		match token {
+	fn try_from(token: TokenInfo) -> Result<Self, Self::Error> {
+		match token.token {
 			Token::Minus => Ok(UnaryOperator::Minus),
 			Token::Bang => Ok(UnaryOperator::Bang),
 			_ => Err(Self::Error::UnexpectedToken(token)),
