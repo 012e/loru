@@ -131,7 +131,8 @@ impl TryApplyBinary for Literal {
 		op: &Operator,
 		other: &Literal,
 	) -> Result<Literal, Self::Error> {
-		// check if literals are of the same type
+		// Check if literals are of the same type.
+		// WARN: `Literal::False` and `Literal::True` are different types.
 		if std::mem::discriminant(self) != std::mem::discriminant(other) {
 			return Err(Error::UnmatchedType(
 				self.clone(),
@@ -139,6 +140,7 @@ impl TryApplyBinary for Literal {
 				other.clone(),
 			));
 		}
+
 		match (op, self) {
 			(&Operator::Plus, Literal::Number(n)) => match other {
 				Literal::Number(r) => Ok(Literal::Number(n + r)),
@@ -233,6 +235,21 @@ mod tests {
 				Operator::Star,
 				Literal::String("2".to_owned())
 			)
+		);
+	}
+
+	#[test]
+	fn test_unsupported_operation() {
+		let expr = ast::Expr::Binary(
+			Box::new(ast::Expr::Literal(Literal::True)),
+			Operator::Plus,
+			Box::new(ast::Expr::Literal(Literal::True)),
+		);
+		let result = expr.eval();
+		assert!(result.is_err());
+		assert_eq!(
+			result.unwrap_err(),
+			Error::UnsupportedOperator(Operator::Plus, Literal::True)
 		);
 	}
 }
