@@ -37,7 +37,7 @@ trait TryApplyUnary {
 
 impl Evalable for ast::Literal {
 	fn eval(self) -> Result<Literal, Error> {
-		Ok(self.clone())
+		Ok(self)
 	}
 }
 

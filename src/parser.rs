@@ -18,26 +18,33 @@ pub enum Error {
 
 pub struct Parser {
 	tokens: Vec<TokenInfo>,
-	current: usize,
+	current_token: TokenInfo,
 }
 
 impl Parser {
-	fn new(tokens: Vec<TokenInfo>) -> Parser {
-		Parser { tokens, current: 0 }
+	fn new(mut tokens: Vec<TokenInfo>) -> Parser {
+		let current_token = tokens.remove(0);
+		Parser {
+			tokens,
+			current_token,
+		}
 	}
 
 	fn advance(&mut self) -> TokenInfo {
 		let current = self.peek();
-		self.current += 1;
+		if !self.tokens.is_empty() {
+			self.current_token = self.tokens.remove(0);
+		}
 		current
 	}
 
 	fn peek(&self) -> TokenInfo {
-		self.tokens[self.current].clone()
-	}
-
-	fn previous(&self) -> TokenInfo {
-		self.tokens[self.current - 1].clone()
+		unsafe {
+			// This is safe because we know that the current_token is always valid.
+			// If something went wrong, we could have just `self.current_token.clone()`.
+			// hehehehe...
+			std::ptr::read(&self.current_token as *const TokenInfo)
+		}
 	}
 }
 
@@ -61,9 +68,10 @@ fn parse_primary(parser: &mut Parser) -> ParseResult<Expr> {
 		Token::String(s) => Ok(Expr::Literal(Literal::String(s))),
 		Token::LeftParen => {
 			let expr = parse_expression(parser)?;
-			match parser.advance().token {
+			let current = parser.advance();
+			match current.token {
 				Token::RightParen => Ok(Expr::Grouping(Box::new(expr))),
-				_ => Err(Error::MissingRightParen(parser.previous())),
+				_ => Err(Error::MissingRightParen(current)),
 			}
 		}
 		_ => Err(Error::UnexpectedToken(parser.peek())),
