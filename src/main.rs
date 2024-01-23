@@ -16,8 +16,8 @@ fn repl() -> ! {
 		print!(">>> ");
 		std::io::stdout().flush().unwrap();
 		std::io::stdin().read_line(&mut line).unwrap();
-		let source: &Vec<char> = &line.chars().collect::<Vec<_>>();
-		let (tokens, errors) = crate::scanner::Scanner::new(source).scan();
+		let source: Vec<char> = line.chars().collect::<Vec<_>>();
+		let (tokens, _, errors) = crate::scanner::scan(source);
 		assert!(errors.is_empty());
 		match parser::parse(tokens) {
 			Ok(expr) => println!("{:?}", expr.eval()),
