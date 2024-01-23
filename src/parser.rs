@@ -72,6 +72,8 @@ fn parse_expression_statement(parser: &mut Parser) -> ParseResult<Stmt> {
 }
 
 fn parse_print_statement(parser: &mut Parser) -> ParseResult<Stmt> {
+	// advance through the print token
+	parser.advance();
 	let expr = parse_expression(parser)?;
 	let t = parser.advance();
 	match t {
@@ -267,7 +269,19 @@ mod tests {
 	#[test]
 	fn test_expr_missing_right_paren() {
 		let tokens = vec![Token::LeftParen, Token::Number(1.0), Token::Eof];
-		let expr = parse(tokens);
-		assert_eq!(expr.unwrap_err(), Error::MissingRightParen);
+		assert_eq!(parse(tokens).unwrap_err(), Error::MissingRightParen);
+	}
+
+	#[test]
+	fn test_print_statement() {
+		let tokens = vec![
+			Token::Print,
+			Token::Number(1.0),
+			Token::Semicolon,
+			Token::Eof,
+		];
+		let statement = parse(tokens).unwrap().remove(0);
+		let expected_statement = Stmt::Print(Expr::Literal(Literal::Number(1.0)));
+		assert_eq!(statement, expected_statement);
 	}
 }
