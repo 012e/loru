@@ -2,7 +2,7 @@ use enum_display::EnumDisplay;
 
 use crate::{parser, token::Token};
 
-#[derive(Debug, PartialEq, Clone, EnumDisplay)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Literal {
 	False,
 	True,
@@ -37,6 +37,24 @@ pub enum Expr {
 	Grouping(Box<Expr>),
 	Literal(Literal),
 	Unary(UnaryOperator, Box<Expr>),
+}
+
+#[derive(Debug)]
+pub enum Stmt {
+	Expression(Expr),
+	Print(Expr),
+}
+
+impl std::fmt::Display for Literal {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			Literal::False => write!(f, "false"),
+			Literal::True => write!(f, "true"),
+			Literal::Nil => write!(f, "nil"),
+			Literal::Number(n) => write!(f, "{}", n),
+			Literal::String(s) => write!(f, "{}", s),
+		}
+	}
 }
 
 impl TryFrom<Token> for Operator {

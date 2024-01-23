@@ -1,4 +1,4 @@
-use crate::ast::{self, Literal, Operator, UnaryOperator};
+use crate::ast::{self, Literal, Operator, Stmt, UnaryOperator};
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum Error {
@@ -18,107 +18,39 @@ pub enum Error {
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 pub trait Evalable {
-	fn eval(&self) -> Result<Literal, Error>;
+	fn eval(self) -> Result<Literal, Error>;
 }
 
 trait TryApplyBinary {
 	type Error;
 	fn try_apply_binary(
-		&self,
-		op: &Operator,
-		other: &Literal,
+		self,
+		op: Operator,
+		other: Literal,
 	) -> Result<Literal, Self::Error>;
 }
 
 trait TryApplyUnary {
 	type Error;
-	fn try_apply_unary(&self, op: &UnaryOperator) -> Result<Literal, Self::Error>;
+	fn try_apply_unary(self, op: UnaryOperator) -> Result<Literal, Self::Error>;
 }
 
 impl Evalable for ast::Literal {
-	fn eval(&self) -> Result<Literal, Error> {
-		Ok(self.clone())
-	}
-}
-
-fn compare_numbers(left: &f64, op: &Operator, right: &f64) -> Literal {
-	match op {
-		Operator::BangEqual => {
-			if left != right {
-				Literal::True
-			} else {
-				Literal::False
-			}
-		}
-		Operator::EqualEqual => {
-			if left == right {
-				Literal::True
-			} else {
-				Literal::False
-			}
-		}
-		Operator::Greater => {
-			if left > right {
-				Literal::True
-			} else {
-				Literal::False
-			}
-		}
-		Operator::GreaterEqual => {
-			if left >= right {
-				Literal::True
-			} else {
-				Literal::False
-			}
-		}
-		Operator::Less => {
-			if left < right {
-				Literal::True
-			} else {
-				Literal::False
-			}
-		}
-		Operator::LessEqual => {
-			if left <= right {
-				Literal::True
-			} else {
-				Literal::False
-			}
-		}
-		_ => unreachable!(),
-	}
-}
-
-fn compare_strings(left: &String, op: &Operator, right: &String) -> Literal {
-	match op {
-		Operator::BangEqual => {
-			if left != right {
-				Literal::True
-			} else {
-				Literal::False
-			}
-		}
-		Operator::EqualEqual => {
-			if left == right {
-				Literal::True
-			} else {
-				Literal::False
-			}
-		}
-		_ => unreachable!(),
+	fn eval(self) -> Result<Literal, Error> {
+		Ok(self)
 	}
 }
 
 impl TryApplyUnary for Literal {
 	type Error = Error;
 
-	fn try_apply_unary(&self, op: &UnaryOperator) -> Result<Literal, Self::Error> {
-		match (op, self) {
-			(&UnaryOperator::Minus, Literal::Number(n)) => Ok(Literal::Number(-n)),
-			(&UnaryOperator::Bang, Literal::False) => Ok(Literal::True),
-			(&UnaryOperator::Bang, Literal::True) => Ok(Literal::False),
-			(&UnaryOperator::Bang, Literal::Nil) => Ok(Literal::True),
-			_ => Err(Error::CantApplyUnaryOperator(self.clone())),
+	fn try_apply_unary(self, op: UnaryOperator) -> Result<Literal, Self::Error> {
+		match (op, &self) {
+			(UnaryOperator::Minus, Literal::Number(n)) => Ok(Literal::Number(-n)),
+			(UnaryOperator::Bang, Literal::False) => Ok(Literal::True),
+			(UnaryOperator::Bang, Literal::True) => Ok(Literal::False),
+			(UnaryOperator::Bang, Literal::Nil) => Ok(Literal::True),
+			_ => Err(Error::CantApplyUnaryOperator(self)),
 		}
 	}
 }
@@ -127,72 +59,83 @@ impl TryApplyBinary for Literal {
 	type Error = Error;
 
 	fn try_apply_binary(
-		&self,
-		op: &Operator,
-		other: &Literal,
+		self,
+		op: Operator,
+		other: Literal,
 	) -> Result<Literal, Self::Error> {
-		// Check if literals are of the same type.
-		// WARN: `Literal::False` and `Literal::True` are different types.
-		if std::mem::discriminant(self) != std::mem::discriminant(other) {
-			return Err(Error::UnmatchedType(
-				self.clone(),
-				op.clone(),
-				other.clone(),
-			));
-		}
-
-		match (op, self) {
-			(&Operator::Plus, Literal::Number(n)) => match other {
-				Literal::Number(r) => Ok(Literal::Number(n + r)),
-				_ => unreachable!(),
-			},
-			(&Operator::Minus, Literal::Number(n)) => match other {
-				Literal::Number(r) => Ok(Literal::Number(n - r)),
-				_ => unreachable!(),
-			},
-			(&Operator::Star, Literal::Number(n)) => match other {
-				Literal::Number(r) => Ok(Literal::Number(n * r)),
-				_ => unreachable!(),
-			},
-			(&Operator::Slash, Literal::Number(n)) => match other {
-				// TODO: this is a hack, fix it, rust is getting away from using `match`
-				// with floating point literals
-				#[allow(illegal_floating_point_literal_pattern)]
-				Literal::Number(0f64) => Err(Error::DivideByZero),
-				Literal::Number(r) => Ok(Literal::Number(n / r)),
-				_ => unreachable!(),
-			},
-			(&Operator::BangEqual, Literal::Number(l))
-			| (&Operator::EqualEqual, Literal::Number(l))
-			| (&Operator::Greater, Literal::Number(l))
-			| (&Operator::GreaterEqual, Literal::Number(l))
-			| (&Operator::Less, Literal::Number(l))
-			| (&Operator::LessEqual, Literal::Number(l)) => match other {
-				Literal::Number(r) => Ok(compare_numbers(l, op, r)),
-				_ => unreachable!(),
-			},
-			(&Operator::Plus, Literal::String(s)) => match other {
-				Literal::String(r) => Ok(Literal::String(s.to_owned() + r)),
-				_ => unreachable!(),
-			},
-			(&Operator::EqualEqual, Literal::String(l))
-			| (&Operator::BangEqual, Literal::String(l)) => match other {
-				Literal::String(r) => Ok(compare_strings(l, op, r)),
-				_ => unreachable!(),
-			},
-			(op, lit) => Err(Error::UnsupportedOperator(op.clone(), lit.clone())),
+		match (&self, op, &other) {
+			(Literal::False, Operator::EqualEqual, Literal::True) => Ok(Literal::False),
+			(Literal::True, Operator::EqualEqual, Literal::False) => Ok(Literal::False),
+			(Literal::True, Operator::EqualEqual, Literal::True) => Ok(Literal::True),
+			(Literal::False, Operator::EqualEqual, Literal::False) => Ok(Literal::True),
+			(Literal::False, Operator::BangEqual, Literal::True) => Ok(Literal::True),
+			(Literal::True, Operator::BangEqual, Literal::False) => Ok(Literal::True),
+			(Literal::True, Operator::BangEqual, Literal::True) => Ok(Literal::False),
+			(Literal::False, Operator::BangEqual, Literal::False) => Ok(Literal::False),
+			(Literal::Number(l), Operator::Plus, Literal::Number(r)) => {
+				Ok(Literal::Number(l + r))
+			}
+			(Literal::Number(l), Operator::Minus, Literal::Number(r)) => {
+				Ok(Literal::Number(l - r))
+			}
+			(Literal::Number(l), Operator::Star, Literal::Number(r)) => {
+				Ok(Literal::Number(l * r))
+			}
+			(Literal::Number(l), Operator::Slash, Literal::Number(r)) => {
+				if *r == 0.0 {
+					return Err(Error::DivideByZero);
+				}
+				Ok(Literal::Number(l / r))
+			}
+			(Literal::String(l), Operator::Plus, Literal::String(r)) => {
+				Ok(Literal::String(l.to_owned() + r))
+			}
+			(Literal::Number(l), Operator::EqualEqual, Literal::Number(r)) => {
+				if l == r {
+					Ok(Literal::True)
+				} else {
+					Ok(Literal::False)
+				}
+			}
+			(Literal::Number(l), Operator::BangEqual, Literal::Number(r)) => {
+				if l == r {
+					Ok(Literal::False)
+				} else {
+					Ok(Literal::True)
+				}
+			}
+			(Literal::String(l), Operator::EqualEqual, Literal::String(r)) => {
+				if l == r {
+					Ok(Literal::True)
+				} else {
+					Ok(Literal::False)
+				}
+			}
+			(Literal::String(l), Operator::BangEqual, Literal::String(r)) => {
+				if l == r {
+					Ok(Literal::False)
+				} else {
+					Ok(Literal::True)
+				}
+			}
+			(l, op, r) => {
+				if std::mem::discriminant(l) != std::mem::discriminant(r) {
+					return Err(Error::UnmatchedType(self, op, other));
+				}
+				Err(Error::UnsupportedOperator(op, other))
+			}
 		}
 	}
 }
 
 impl Evalable for ast::Expr {
-	fn eval(&self) -> Result<Literal, Error> {
+	fn eval(self) -> Result<Literal, Error> {
 		match self {
 			ast::Expr::Literal(lit) => lit.eval(),
 			ast::Expr::Binary(lexpr, op, rexpr) => {
 				let left_result = lexpr.eval()?;
 				let right_result = rexpr.eval()?;
-				left_result.try_apply_binary(op, &right_result)
+				left_result.try_apply_binary(op, right_result)
 			}
 			ast::Expr::Unary(op, expr) => {
 				let result = expr.eval()?;
@@ -203,33 +146,63 @@ impl Evalable for ast::Expr {
 	}
 }
 
+impl Evalable for Stmt {
+	fn eval(self) -> crate::eval::Result<Literal, crate::eval::Error> {
+		match self {
+			Stmt::Expression(expr) => expr.eval(),
+			Stmt::Print(expr) => {
+				let literal = expr.eval()?;
+				return Ok(Literal::String(format!("{}", literal)));
+			}
+		}
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::ast::Expr;
 
 	#[test]
 	fn test_eval() {
-		let expr = ast::Expr::Binary(
-			Box::new(ast::Expr::Literal(Literal::Number(8.0))),
-			Operator::Star,
-			Box::new(ast::Expr::Literal(Literal::Number(2.0))),
-		);
-		let result = expr.eval();
-		assert!(result.is_ok());
-		assert_eq!(expr.eval().unwrap(), Literal::Number(16.0));
+		let statement = Stmt::Expression(Expr::Binary(
+			Box::new(Expr::Literal(Literal::Number(14.0))),
+			Operator::Slash,
+			Box::new(Expr::Literal(Literal::Number(2.0))),
+		));
+		assert_eq!(statement.eval().unwrap(), Literal::Number(7.0));
+	}
+	#[test]
+	fn test_boolean() {
+		let statement1 = Stmt::Expression(Expr::Binary(
+			Box::new(Expr::Literal(Literal::True)),
+			Operator::EqualEqual,
+			Box::new(Expr::Literal(Literal::True)),
+		));
+		let statement2 = Stmt::Expression(Expr::Binary(
+			Box::new(Expr::Literal(Literal::Number(1.0))),
+			Operator::EqualEqual,
+			Box::new(Expr::Literal(Literal::Number(2.0))),
+		));
+		let statement3 = Stmt::Expression(Expr::Binary(
+			Box::new(Expr::Literal(Literal::Number(1.0))),
+			Operator::BangEqual,
+			Box::new(Expr::Literal(Literal::Number(2.0))),
+		));
+		assert_eq!(statement1.eval().unwrap(), Literal::True);
+		assert_eq!(statement2.eval().unwrap(), Literal::False);
+		assert_eq!(statement3.eval().unwrap(), Literal::True);
 	}
 
 	#[test]
 	fn test_invalid_eval() {
-		let expr = ast::Expr::Binary(
+		let statement = Stmt::Expression(ast::Expr::Binary(
 			Box::new(ast::Expr::Literal(Literal::Number(8.0))),
 			Operator::Star,
 			Box::new(ast::Expr::Literal(Literal::String("2".into()))),
-		);
-		let result = expr.eval();
-		assert!(result.is_err());
+		));
 		assert_eq!(
-			result.unwrap_err(),
+			statement.eval().unwrap_err(),
 			Error::UnmatchedType(
 				Literal::Number(8.0),
 				Operator::Star,
@@ -239,16 +212,30 @@ mod tests {
 	}
 
 	#[test]
+	fn test_divide_by_zero() {
+		let statement = Stmt::Expression(ast::Expr::Binary(
+			Box::new(ast::Expr::Literal(Literal::Number(8.0))),
+			Operator::Slash,
+			Box::new(ast::Expr::Literal(Literal::Number(0.0))),
+		));
+		assert_eq!(statement.eval().unwrap_err(), Error::DivideByZero);
+	}
+
+	#[test]
+	fn test_print() {
+		let stmt = ast::Stmt::Print(ast::Expr::Literal(Literal::Number(1.0)));
+		assert_eq!(stmt.eval().unwrap(), Literal::String("1".to_owned()));
+	}
+
+	#[test]
 	fn test_unsupported_operation() {
-		let expr = ast::Expr::Binary(
+		let statement = Stmt::Expression(ast::Expr::Binary(
 			Box::new(ast::Expr::Literal(Literal::True)),
 			Operator::Plus,
 			Box::new(ast::Expr::Literal(Literal::True)),
-		);
-		let result = expr.eval();
-		assert!(result.is_err());
+		));
 		assert_eq!(
-			result.unwrap_err(),
+			statement.eval().unwrap_err(),
 			Error::UnsupportedOperator(Operator::Plus, Literal::True)
 		);
 	}

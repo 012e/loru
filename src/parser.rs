@@ -1,6 +1,10 @@
 use thiserror::Error;
 
-use crate::{ast::Expr, ast::Literal, token::Token};
+use crate::{
+	ast::Expr,
+	ast::{Literal, Stmt},
+	token::Token,
+};
 
 #[derive(Error, Debug, PartialEq)]
 pub enum Error {
@@ -8,6 +12,8 @@ pub enum Error {
 	UnexpectedToken(Token),
 	#[error("Missing ')' after expression")]
 	MissingRightParen,
+	#[error("Missing ';' after expression")]
+	MissingSemicolon,
 }
 
 pub struct Parser {
@@ -18,6 +24,10 @@ pub struct Parser {
 impl Parser {
 	fn new(tokens: Vec<Token>) -> Parser {
 		Parser { tokens, current: 0 }
+	}
+
+	fn is_at_end(&self) -> bool {
+		self.current >= self.tokens.len() || self.tokens[self.current] == Token::Eof
 	}
 
 	fn advance(&mut self) -> Token {
@@ -33,9 +43,44 @@ impl Parser {
 
 pub type ParseResult<T> = Result<T, Error>;
 
-pub fn parse(tokens: Vec<Token>) -> ParseResult<Expr> {
+pub fn parse(tokens: Vec<Token>) -> ParseResult<Vec<Stmt>> {
 	let mut parser = Parser::new(tokens);
-	parse_expression(&mut parser)
+	let mut statements: Vec<Stmt> = vec![];
+	while !parser.is_at_end() {
+		statements.push(parse_statement(&mut parser)?);
+	}
+	Ok(statements)
+}
+
+fn parse_statement(parser: &mut Parser) -> ParseResult<Stmt> {
+	match parser.peek() {
+		Token::Print => parse_print_statement(parser),
+		_ => parse_expression_statement(parser),
+	}
+}
+
+fn parse_expression_statement(parser: &mut Parser) -> ParseResult<Stmt> {
+	let expr = parse_expression(parser)?;
+	let t = parser.advance();
+	match t {
+		Token::Semicolon => {
+			parser.advance();
+			Ok(Stmt::Expression(expr))
+		}
+		_ => Err(Error::MissingSemicolon),
+	}
+}
+
+fn parse_print_statement(parser: &mut Parser) -> ParseResult<Stmt> {
+	let expr = parse_expression(parser)?;
+	let t = parser.advance();
+	match t {
+		Token::Semicolon => {
+			parser.advance();
+			Ok(Stmt::Print(expr))
+		}
+		_ => Err(Error::MissingSemicolon),
+	}
 }
 
 fn parse_expression(parser: &mut Parser) -> ParseResult<Expr> {
@@ -142,11 +187,15 @@ mod tests {
 			Token::Number(2.0),
 			Token::Star,
 			Token::Number(3.0),
+			Token::Semicolon,
 			Token::Eof,
 		];
-		let expr = parse(tokens);
-		assert!(expr.is_ok());
-		let expr = expr.unwrap();
+		let mut stmts = parse(tokens).unwrap();
+		assert_eq!(stmts.len(), 1);
+		let expr = match stmts.remove(0) {
+			Stmt::Expression(expr) => expr,
+			_ => panic!("Expected expression statement"),
+		};
 
 		let expected = Expr::Binary(
 			Box::new(Expr::Literal(Literal::Number(1.0))),
@@ -162,7 +211,7 @@ mod tests {
 
 	#[test]
 	fn test_nested_expression() {
-		// 1 + (2 * (9 + 9) * 3)
+		// 1 + (2 * (9 + 9) * 3);
 		let tokens = vec![
 			Token::Number(1.0),
 			Token::Plus,
@@ -177,11 +226,15 @@ mod tests {
 			Token::Star,
 			Token::Number(3.0),
 			Token::RightParen,
+			Token::Semicolon,
 			Token::Eof,
 		];
-		let expr = parse(tokens);
-		assert!(expr.is_ok());
-		let expr = expr.unwrap();
+		let mut statements = parse(tokens).unwrap();
+		assert_eq!(statements.len(), 1);
+		let expr = match statements.remove(0) {
+			Stmt::Expression(expr) => expr,
+			_ => panic!("Expected expression statement"),
+		};
 
 		// (9 + 9)
 		let inner1 = Expr::Grouping(Box::new(Expr::Binary(
@@ -189,6 +242,7 @@ mod tests {
 			Operator::Plus,
 			Box::new(Expr::Literal(Literal::Number(9.0))),
 		)));
+
 		// (2 * (9 + 9) * 3)
 		let inner2 = Expr::Grouping(Box::new(Expr::Binary(
 			Box::new(Expr::Binary(
@@ -214,7 +268,6 @@ mod tests {
 	fn test_expr_missing_right_paren() {
 		let tokens = vec![Token::LeftParen, Token::Number(1.0), Token::Eof];
 		let expr = parse(tokens);
-		assert!(expr.is_err());
 		assert_eq!(expr.unwrap_err(), Error::MissingRightParen);
 	}
 }
