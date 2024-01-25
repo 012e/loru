@@ -128,6 +128,15 @@ impl std::fmt::Display for Expr {
 			Expr::Unary(operator, right) => {
 				write!(f, "({} {})", operator, right)
 			}
+impl TryFrom<Expr> for Identifier {
+	type Error = parser::Error;
+
+	fn try_from(expr: Expr) -> Result<Self, parser::Error> {
+		match expr {
+			Expr::Variable(name) => Ok(name),
+			// TODO: Reconsider this, could need some refactoring.
+			// Is there any different errors could come from this function?
+			_ => Err(parser::Error::InvalidAssignmentTarget),
 		}
 	}
 }
