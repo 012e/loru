@@ -1,5 +1,3 @@
-use enum_display::EnumDisplay;
-
 use crate::{parser, token::Token};
 
 #[derive(Debug, PartialEq, Clone)]
@@ -11,7 +9,7 @@ pub enum Literal {
 	String(String),
 }
 
-#[derive(Debug, PartialEq, Clone, EnumDisplay)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Operator {
 	Plus,
 	Minus,
@@ -25,7 +23,7 @@ pub enum Operator {
 	LessEqual,
 }
 
-#[derive(Debug, PartialEq, Clone, EnumDisplay)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum UnaryOperator {
 	Minus,
 	Bang,
@@ -39,7 +37,7 @@ pub enum Expr {
 	Unary(UnaryOperator, Box<Expr>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Stmt {
 	Expression(Expr),
 	Print(Expr),
@@ -53,6 +51,32 @@ impl std::fmt::Display for Literal {
 			Literal::Nil => write!(f, "nil"),
 			Literal::Number(n) => write!(f, "{}", n),
 			Literal::String(s) => write!(f, "{}", s),
+		}
+	}
+}
+
+impl std::fmt::Display for Operator {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			Operator::Plus => write!(f, "+"),
+			Operator::Minus => write!(f, "-"),
+			Operator::Star => write!(f, "*"),
+			Operator::Slash => write!(f, "/"),
+			Operator::BangEqual => write!(f, "!="),
+			Operator::EqualEqual => write!(f, "=="),
+			Operator::Greater => write!(f, ">"),
+			Operator::GreaterEqual => write!(f, ">="),
+			Operator::Less => write!(f, "<"),
+			Operator::LessEqual => write!(f, "<="),
+		}
+	}
+}
+
+impl std::fmt::Display for UnaryOperator {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			UnaryOperator::Minus => write!(f, "-"),
+			UnaryOperator::Bang => write!(f, "!"),
 		}
 	}
 }
