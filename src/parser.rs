@@ -30,44 +30,79 @@ impl Parser {
 		self.current >= self.tokens.len() || self.tokens[self.current] == Token::Eof
 	}
 
-	fn advance(&mut self) -> Token {
+	fn advance(&mut self) -> Option<Token> {
 		let current = self.peek();
 		self.current += 1;
 		current
 	}
 
-	fn peek(&self) -> Token {
-		self.tokens[self.current].clone()
+	fn peek(&self) -> Option<Token> {
+		let token = self.tokens.get(self.current);
+		match token {
+			Some(Token::Eof) => None,
+			None => None,
+			Some(token) => Some(token.clone()),
+		}
+	}
+
+	fn sync(&mut self) {
+		self.advance();
+		while let Some(token) = self.peek() {
+			match token {
+				Token::Semicolon => {
+					self.advance();
+					return;
+				}
+				Token::Class
+				| Token::Fun
+				| Token::Var
+				| Token::For
+				| Token::If
+				| Token::While
+				| Token::Print
+				| Token::Return => return,
+				_ => (),
+			}
+			self.advance();
+		}
 	}
 }
 
 pub type ParseResult<T> = Result<T, Error>;
 
-pub fn parse(tokens: Vec<Token>) -> ParseResult<Vec<Stmt>> {
+pub fn parse(tokens: Vec<Token>) -> (Vec<Stmt>, Vec<Error>) {
 	let mut parser = Parser::new(tokens);
 	let mut statements: Vec<Stmt> = vec![];
+	let mut errors: Vec<Error> = vec![];
 	while !parser.is_at_end() {
-		statements.push(parse_statement(&mut parser)?);
+		match parse_statement(&mut parser) {
+			Ok(statement) => statements.push(statement),
+			Err(error) => {
+				errors.push(error);
+				parser.sync();
+			}
+		}
 	}
-	Ok(statements)
+	(statements, errors)
 }
 
 fn parse_statement(parser: &mut Parser) -> ParseResult<Stmt> {
 	match parser.peek() {
-		Token::Print => parse_print_statement(parser),
-		_ => parse_expression_statement(parser),
+		Some(Token::Print) => parse_print_statement(parser),
+		Some(_) => parse_expression_statement(parser),
+		None => panic!("unexpected None"),
 	}
 }
 
 fn parse_expression_statement(parser: &mut Parser) -> ParseResult<Stmt> {
 	let expr = parse_expression(parser)?;
-	let t = parser.advance();
-	match t {
-		Token::Semicolon => {
+	match parser.peek() {
+		Some(Token::Semicolon) => {
 			parser.advance();
 			Ok(Stmt::Expression(expr))
 		}
-		_ => Err(Error::MissingSemicolon),
+		Some(_) => Err(Error::MissingSemicolon),
+		None => Err(Error::UnexpectedToken(Token::Eof)),
 	}
 }
 
@@ -75,9 +110,8 @@ fn parse_print_statement(parser: &mut Parser) -> ParseResult<Stmt> {
 	// advance through the print token
 	parser.advance();
 	let expr = parse_expression(parser)?;
-	let t = parser.advance();
-	match t {
-		Token::Semicolon => {
+	match parser.peek() {
+		Some(Token::Semicolon) => {
 			parser.advance();
 			Ok(Stmt::Print(expr))
 		}
@@ -90,53 +124,77 @@ fn parse_expression(parser: &mut Parser) -> ParseResult<Expr> {
 }
 
 fn parse_primary(parser: &mut Parser) -> ParseResult<Expr> {
-	match parser.advance() {
-		Token::False => Ok(Expr::Literal(Literal::False)),
-		Token::True => Ok(Expr::Literal(Literal::True)),
-		Token::Nil => Ok(Expr::Literal(Literal::Nil)),
-		Token::Number(n) => Ok(Expr::Literal(Literal::Number(n))),
-		Token::String(s) => Ok(Expr::Literal(Literal::String(s))),
-		Token::LeftParen => {
+	let current = parser.peek();
+	match current {
+		Some(Token::False) => {
+			parser.advance();
+			Ok(Expr::Literal(Literal::False))
+		}
+		Some(Token::True) => {
+			parser.advance();
+			Ok(Expr::Literal(Literal::True))
+		}
+		Some(Token::Nil) => {
+			parser.advance();
+			Ok(Expr::Literal(Literal::Nil))
+		}
+		Some(Token::Number(n)) => {
+			parser.advance();
+			Ok(Expr::Literal(Literal::Number(n)))
+		}
+		Some(Token::String(s)) => {
+			parser.advance();
+			Ok(Expr::Literal(Literal::String(s)))
+		}
+		Some(Token::LeftParen) => {
+			parser.advance();
 			let expr = parse_expression(parser)?;
-			match parser.advance() {
-				Token::RightParen => Ok(Expr::Grouping(Box::new(expr))),
+			match parser.peek() {
+				Some(Token::RightParen) => {
+					parser.advance();
+					Ok(Expr::Grouping(Box::new(expr)))
+				}
 				_ => Err(Error::MissingRightParen),
 			}
 		}
-		_ => Err(Error::UnexpectedToken(parser.peek())),
+		Some(token) => Err(Error::UnexpectedToken(token)),
+		None => Err(Error::UnexpectedToken(Token::Eof)),
 	}
 }
 
 fn parse_unary(parser: &mut Parser) -> ParseResult<Expr> {
-	if let Some(operator) = match parser.peek() {
-		Token::Bang | Token::Minus => Some(parser.advance()),
-		_ => None,
-	} {
-		let right = parse_unary(parser)?;
-		return Ok(Expr::Unary(operator.try_into()?, Box::new(right)));
+	match parser.peek() {
+		Some(Token::Bang) | Some(Token::Minus) => {
+			let operator = parser
+				.peek()
+				.expect("must be able to advance (we have just peeked)");
+			parser.advance();
+			let right = parse_unary(parser)?;
+			Ok(Expr::Unary(operator.try_into()?, Box::new(right)))
+		}
+		Some(_) => parse_primary(parser),
+		None => Err(Error::UnexpectedToken(Token::Eof)),
 	}
-	parse_primary(parser)
 }
 
 fn parse_factor(parser: &mut Parser) -> ParseResult<Expr> {
 	let mut expr = parse_unary(parser)?;
-	while let Some(operator) = match parser.peek() {
-		Token::Slash | Token::Star => Some(parser.advance()),
-		_ => None,
-	} {
+	while matches!(parser.peek(), Some(Token::Slash) | Some(Token::Star)) {
+		let operator = parser.peek().expect("must be able to advance");
+		parser.advance();
 		let right = parse_unary(parser)?;
 		expr = Expr::Binary(Box::new(expr), operator.try_into()?, Box::new(right));
 	}
+
 	Ok(expr)
 }
 
 fn parse_term(parser: &mut Parser) -> ParseResult<Expr> {
 	let mut expr = parse_factor(parser)?;
 
-	while let Some(operator) = match parser.peek() {
-		Token::Minus | Token::Plus => Some(parser.advance()),
-		_ => None,
-	} {
+	while matches!(parser.peek(), Some(Token::Minus) | Some(Token::Plus)) {
+		let operator = parser.peek().expect("must be able to advance");
+		parser.advance();
 		let right = parse_factor(parser)?;
 		expr = Expr::Binary(Box::new(expr), operator.try_into()?, Box::new(right));
 	}
@@ -146,29 +204,31 @@ fn parse_term(parser: &mut Parser) -> ParseResult<Expr> {
 
 fn parse_comparison(parser: &mut Parser) -> ParseResult<Expr> {
 	let mut expr = parse_term(parser)?;
-
-	while let Some(operator) = match parser.peek() {
-		Token::Greater
-		| Token::GreaterEqual
-		| Token::Less
-		| Token::LessEqual
-		| Token::BangEqual
-		| Token::EqualEqual => Some(parser.advance()),
-		_ => None,
-	} {
+	while matches!(
+		parser.peek(),
+		Some(Token::Greater)
+			| Some(Token::GreaterEqual)
+			| Some(Token::Less)
+			| Some(Token::LessEqual)
+	) {
+		let operator = parser.peek().expect("must be able to advance");
+		parser.advance();
 		let right = parse_term(parser)?;
 		expr = Expr::Binary(Box::new(expr), operator.try_into()?, Box::new(right));
 	}
+
 	Ok(expr)
 }
 
 fn parse_equality(parser: &mut Parser) -> ParseResult<Expr> {
 	let mut expr = parse_comparison(parser)?;
 
-	while let Some(operator) = match parser.peek() {
-		Token::BangEqual | Token::EqualEqual => Some(parser.advance()),
-		_ => None,
-	} {
+	while matches!(
+		parser.peek(),
+		Some(Token::BangEqual) | Some(Token::EqualEqual)
+	) {
+		let operator = parser.peek().expect("must be able to advance");
+		parser.advance();
 		let right = parse_comparison(parser)?;
 		expr = Expr::Binary(Box::new(expr), operator.try_into()?, Box::new(right));
 	}
@@ -178,6 +238,8 @@ fn parse_equality(parser: &mut Parser) -> ParseResult<Expr> {
 
 #[cfg(test)]
 mod tests {
+	use assert2::assert;
+
 	use super::*;
 	use crate::{ast::Operator, token::Token};
 
@@ -192,9 +254,11 @@ mod tests {
 			Token::Semicolon,
 			Token::Eof,
 		];
-		let mut stmts = parse(tokens).unwrap();
-		assert_eq!(stmts.len(), 1);
-		let expr = match stmts.remove(0) {
+		let (stmts, errors) = parse(tokens);
+		dbg!(&errors);
+		assert!(stmts.len() == 1);
+		assert!(errors.len() == 0);
+		let expr = match &stmts[0] {
 			Stmt::Expression(expr) => expr,
 			_ => panic!("Expected expression statement"),
 		};
@@ -208,7 +272,29 @@ mod tests {
 				Box::new(Expr::Literal(Literal::Number(3.0))),
 			)),
 		);
-		assert_eq!(expr, expected);
+		assert!(*expr == expected);
+	}
+
+	#[test]
+	fn test_simple_nested_expression() {
+		let tokens = vec![
+			Token::LeftParen,
+			Token::Number(2.0),
+			Token::Star,
+			Token::Number(3.0),
+			Token::RightParen,
+			Token::Semicolon,
+			Token::Eof,
+		];
+		let (stmts, errors) = parse(tokens);
+		assert!(stmts.len() == 1);
+		assert!(errors.is_empty());
+		let expected_stmt = Stmt::Expression(Expr::Grouping(Box::new(Expr::Binary(
+			Box::new(Expr::Literal(Literal::Number(2.0))),
+			Operator::Star,
+			Box::new(Expr::Literal(Literal::Number(3.0))),
+		))));
+		assert!(stmts == vec![expected_stmt]);
 	}
 
 	#[test]
@@ -231,9 +317,10 @@ mod tests {
 			Token::Semicolon,
 			Token::Eof,
 		];
-		let mut statements = parse(tokens).unwrap();
-		assert_eq!(statements.len(), 1);
-		let expr = match statements.remove(0) {
+		let (stmts, errors) = parse(tokens);
+		assert!(stmts.len() == 1);
+		assert!(errors.len() == 0);
+		let expr = match &stmts[0] {
 			Stmt::Expression(expr) => expr,
 			_ => panic!("Expected expression statement"),
 		};
@@ -263,13 +350,35 @@ mod tests {
 			Box::new(inner2),
 		);
 
-		assert_eq!(expr, expected);
+		assert!(expr == &expected);
 	}
 
 	#[test]
 	fn test_expr_missing_right_paren() {
 		let tokens = vec![Token::LeftParen, Token::Number(1.0), Token::Eof];
-		assert_eq!(parse(tokens).unwrap_err(), Error::MissingRightParen);
+		let (stmts, errors) = parse(tokens);
+		assert!(stmts.is_empty());
+		assert!(errors.len() == 1);
+		assert!(errors[0] == Error::MissingRightParen);
+	}
+
+	#[test]
+	fn test_multiple_statement() {
+		let tokens = vec![
+			Token::Number(1.0),
+			Token::Semicolon,
+			Token::Number(2.0),
+			Token::Semicolon,
+			Token::Eof,
+		];
+		let (stmts, errors) = parse(tokens);
+		assert!(stmts.len() == 2);
+		assert!(errors.len() == 0);
+		let expected_statement = vec![
+			Stmt::Expression(Expr::Literal(Literal::Number(1.0))),
+			Stmt::Expression(Expr::Literal(Literal::Number(2.0))),
+		];
+		assert!(stmts == expected_statement);
 	}
 
 	#[test]
@@ -278,10 +387,60 @@ mod tests {
 			Token::Print,
 			Token::Number(1.0),
 			Token::Semicolon,
+			Token::Print,
+			Token::Number(2.0),
+			Token::Semicolon,
 			Token::Eof,
 		];
-		let statement = parse(tokens).unwrap().remove(0);
-		let expected_statement = Stmt::Print(Expr::Literal(Literal::Number(1.0)));
-		assert_eq!(statement, expected_statement);
+		let (stmts, errors) = parse(tokens);
+		assert!(stmts.len() == 2);
+		assert!(errors.len() == 0);
+		let expected_statement = vec![
+			Stmt::Print(Expr::Literal(Literal::Number(1.0))),
+			Stmt::Print(Expr::Literal(Literal::Number(2.0))),
+		];
+		assert!(stmts == expected_statement);
+	}
+
+	#[test]
+	fn test_sync() {
+		// print 1 + 2;
+		// print -;
+		// print 4;
+		// print var;
+		let tokens = vec![
+			Token::Print,
+			Token::Number(1.0),
+			Token::Plus,
+			Token::Number(2.0),
+			Token::Semicolon,
+			Token::Print,
+			Token::Minus,
+			Token::Semicolon,
+			Token::Print,
+			Token::Number(4.0),
+			Token::Semicolon,
+			Token::Print,
+			Token::Var,
+			Token::Semicolon,
+			Token::Eof,
+		];
+		let (stmts, errors) = parse(tokens);
+		assert!(stmts.len() == 2, "checking statement len");
+		assert!(errors.len() == 2, "check errors len");
+		let expected_statement = vec![
+			Stmt::Print(Expr::Binary(
+				Box::new(Expr::Literal(Literal::Number(1.0))),
+				Operator::Plus,
+				Box::new(Expr::Literal(Literal::Number(2.0))),
+			)),
+			Stmt::Print(Expr::Literal(Literal::Number(4.0))),
+		];
+		let expected_error = vec![
+			Error::UnexpectedToken(Token::Semicolon),
+			Error::UnexpectedToken(Token::Var),
+		];
+		assert!(stmts == expected_statement, "checking statements");
+		assert!(errors == expected_error, "checking statements");
 	}
 }
