@@ -1,4 +1,9 @@
-use crate::ast::{self, Literal, Operator, Stmt, UnaryOperator};
+use std::rc::Rc;
+
+use crate::{
+	ast::{self, Literal, Operator, Stmt, UnaryOperator},
+	environment::Environment,
+};
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum Error {
@@ -13,12 +18,16 @@ pub enum Error {
 
 	#[error("Divide by zero")]
 	DivideByZero,
+
+	#[error("Undefined variable {0}")]
+	UndefinedVariable(String),
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 pub trait Evalable {
-	fn eval(self) -> Result<Literal, Error>;
+	type Output;
+	fn eval(self, environment: &Environment) -> Result<Self::Output, Error>;
 }
 
 trait TryApplyBinary {
@@ -36,8 +45,71 @@ trait TryApplyUnary {
 }
 
 impl Evalable for ast::Literal {
-	fn eval(self) -> Result<Literal, Error> {
+	type Output = Literal;
+
+	fn eval(self, _: &Environment) -> Result<Literal, Error> {
 		Ok(self)
+	}
+}
+
+impl Evalable for ast::Expr {
+	type Output = Literal;
+
+	fn eval(self, env: &Environment) -> Result<Literal, Error> {
+		match self {
+			ast::Expr::Literal(lit) => lit.eval(env),
+			ast::Expr::Binary(lexpr, op, rexpr) => {
+				let left_result = lexpr.eval(env)?;
+				let right_result = rexpr.eval(env)?;
+				left_result.try_apply_binary(op, right_result)
+			}
+			ast::Expr::Unary(op, expr) => {
+				let result = expr.eval(env)?;
+				result.try_apply_unary(op)
+			}
+			ast::Expr::Grouping(expr) => expr.eval(env),
+			ast::Expr::Variable(name) => match env.get(&name) {
+				Some(value) => Ok(value),
+				None => Err(Error::UndefinedVariable(name)),
+			},
+			ast::Expr::Assign(name, value) => {
+				let value = value.eval(env)?;
+				env.assign(&name, value.clone())?;
+				Ok(value)
+			}
+		}
+	}
+}
+
+impl Evalable for Stmt {
+	type Output = ();
+
+	fn eval(self, env: &Environment) -> Result<(), crate::eval::Error> {
+		match self {
+			Stmt::Expression(expr) => {
+				expr.eval(env)?;
+			}
+			Stmt::Print(expr) => {
+				let literal = expr.eval(env)?;
+				println!("{}", literal);
+			}
+			Stmt::Var(name, maybe_expr) => match maybe_expr {
+				Some(expr) => {
+					let value = expr.eval(env)?;
+					env.define(&name, value);
+				}
+				None => {
+					env.define(&name, Literal::Nil);
+				}
+			},
+			Stmt::Block(stmts) => {
+				let new_env = env.new_enclosed();
+				for stmt in stmts {
+					stmt.eval(&new_env)?;
+				}
+			}
+		};
+		Ok(())
 	}
 }
 
@@ -128,40 +200,12 @@ impl TryApplyBinary for Literal {
 	}
 }
 
-impl Evalable for ast::Expr {
-	fn eval(self) -> Result<Literal, Error> {
-		match self {
-			ast::Expr::Literal(lit) => lit.eval(),
-			ast::Expr::Binary(lexpr, op, rexpr) => {
-				let left_result = lexpr.eval()?;
-				let right_result = rexpr.eval()?;
-				left_result.try_apply_binary(op, right_result)
-			}
-			ast::Expr::Unary(op, expr) => {
-				let result = expr.eval()?;
-				result.try_apply_unary(op)
-			}
-			ast::Expr::Grouping(expr) => expr.eval(),
-		}
-	}
-}
-
-impl Evalable for Stmt {
-	fn eval(self) -> crate::eval::Result<Literal, crate::eval::Error> {
-		match self {
-			Stmt::Expression(expr) => expr.eval(),
-			Stmt::Print(expr) => {
-				let literal = expr.eval()?;
-				return Ok(Literal::String(format!("{}", literal)));
-			}
-		}
-	}
-}
-
 #[cfg(test)]
 mod tests {
+	use assert2::{assert, let_assert};
+
 	use super::*;
-	use crate::ast::Expr;
+	use crate::{ast::Expr, environment::Environment};
 
 	#[test]
 	fn test_eval() {
@@ -170,8 +214,9 @@ mod tests {
 			Operator::Slash,
 			Box::new(Expr::Literal(Literal::Number(2.0))),
 		));
-		assert_eq!(statement.eval().unwrap(), Literal::Number(7.0));
+		assert_eq!(statement.eval(&Environment::new()).unwrap(), ());
 	}
+
 	#[test]
 	fn test_boolean() {
 		let statement1 = Stmt::Expression(Expr::Binary(
@@ -189,9 +234,9 @@ mod tests {
 			Operator::BangEqual,
 			Box::new(Expr::Literal(Literal::Number(2.0))),
 		));
-		assert_eq!(statement1.eval().unwrap(), Literal::True);
-		assert_eq!(statement2.eval().unwrap(), Literal::False);
-		assert_eq!(statement3.eval().unwrap(), Literal::True);
+		assert_eq!(statement1.eval(&Environment::new()).unwrap(), ());
+		assert_eq!(statement2.eval(&Environment::new()).unwrap(), ());
+		assert_eq!(statement3.eval(&Environment::new()).unwrap(), ());
 	}
 
 	#[test]
@@ -202,7 +247,7 @@ mod tests {
 			Box::new(ast::Expr::Literal(Literal::String("2".into()))),
 		));
 		assert_eq!(
-			statement.eval().unwrap_err(),
+			statement.eval(&Environment::new()).unwrap_err(),
 			Error::UnmatchedType(
 				Literal::Number(8.0),
 				Operator::Star,
@@ -218,13 +263,16 @@ mod tests {
 			Operator::Slash,
 			Box::new(ast::Expr::Literal(Literal::Number(0.0))),
 		));
-		assert_eq!(statement.eval().unwrap_err(), Error::DivideByZero);
+		assert_eq!(
+			statement.eval(&Environment::new()).unwrap_err(),
+			Error::DivideByZero
+		);
 	}
 
 	#[test]
 	fn test_print() {
 		let stmt = ast::Stmt::Print(ast::Expr::Literal(Literal::Number(1.0)));
-		assert_eq!(stmt.eval().unwrap(), Literal::String("1".to_owned()));
+		assert_eq!(stmt.eval(&Environment::new()).unwrap(), ());
 	}
 
 	#[test]
@@ -235,8 +283,23 @@ mod tests {
 			Box::new(ast::Expr::Literal(Literal::True)),
 		));
 		assert_eq!(
-			statement.eval().unwrap_err(),
+			statement.eval(&Environment::new()).unwrap_err(),
 			Error::UnsupportedOperator(Operator::Plus, Literal::True)
 		);
+	}
+
+	#[test]
+	fn test_assign() {
+		let env = Environment::new();
+		Stmt::Var("a".to_owned(), Some(Expr::Literal(Literal::Number(1.0))))
+			.eval(&env)
+			.unwrap();
+		Stmt::Block(vec![Stmt::Expression(Expr::Assign(
+			"a".to_owned(),
+			Box::new(Expr::Literal(Literal::Number(2.0))),
+		))])
+		.eval(&env)
+		.unwrap();
+		assert!(env.get("a").unwrap() == Literal::Number(2.0));
 	}
 }

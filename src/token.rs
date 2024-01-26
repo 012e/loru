@@ -21,7 +21,7 @@ pub enum Token {
 	Less,
 	LessEqual,
 
-	Identifier,
+	Identifier(String),
 	String(String),
 	Number(f64),
 
@@ -102,7 +102,7 @@ impl std::fmt::Display for Token {
 			Token::GreaterEqual => f.write_str(">="),
 			Token::Less => f.write_str("<"),
 			Token::LessEqual => f.write_str("<="),
-			Token::Identifier => f.write_str("identifier"),
+			Token::Identifier(name) => f.write_str(name),
 			Token::String(value) => f.write_str(value),
 			Token::Number(value) => f.write_str(&value.to_string()),
 			Token::And => f.write_str("and"),

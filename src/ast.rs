@@ -1,6 +1,6 @@
 use crate::{parser, token::Token};
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(PartialEq, Clone)]
 pub enum Literal {
 	False,
 	True,
@@ -9,7 +9,7 @@ pub enum Literal {
 	String(String),
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(PartialEq, Clone)]
 pub enum Operator {
 	Plus,
 	Minus,
@@ -23,24 +23,68 @@ pub enum Operator {
 	LessEqual,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(PartialEq, Clone)]
 pub enum UnaryOperator {
 	Minus,
 	Bang,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(PartialEq, Clone)]
 pub enum Expr {
 	Binary(Box<Expr>, Operator, Box<Expr>),
 	Grouping(Box<Expr>),
 	Literal(Literal),
 	Unary(UnaryOperator, Box<Expr>),
+	Variable(Identifier),
+	Assign(Identifier, Box<Expr>),
 }
 
-#[derive(Debug, PartialEq)]
+pub type Identifier = String;
+
+#[derive(PartialEq)]
 pub enum Stmt {
 	Expression(Expr),
 	Print(Expr),
+	Var(Identifier, Option<Expr>),
+	Block(Vec<Stmt>),
+}
+
+impl std::fmt::Debug for Literal {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			Literal::False => write!(f, "false"),
+			Literal::True => write!(f, "true"),
+			Literal::Nil => write!(f, "nil"),
+			Literal::Number(n) => write!(f, "{}", n),
+			Literal::String(s) => write!(f, "{}", s),
+		}
+	}
+}
+
+impl std::fmt::Debug for Operator {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			Operator::Plus => write!(f, "+"),
+			Operator::Minus => write!(f, "-"),
+			Operator::Star => write!(f, "*"),
+			Operator::Slash => write!(f, "/"),
+			Operator::BangEqual => write!(f, "!="),
+			Operator::EqualEqual => write!(f, "=="),
+			Operator::Greater => write!(f, ">"),
+			Operator::GreaterEqual => write!(f, ">="),
+			Operator::Less => write!(f, "<"),
+			Operator::LessEqual => write!(f, "<="),
+		}
+	}
+}
+
+impl std::fmt::Debug for UnaryOperator {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			UnaryOperator::Minus => write!(f, "-"),
+			UnaryOperator::Bang => write!(f, "!"),
+		}
+	}
 }
 
 impl std::fmt::Display for Literal {
@@ -128,6 +172,54 @@ impl std::fmt::Display for Expr {
 			Expr::Unary(operator, right) => {
 				write!(f, "({} {})", operator, right)
 			}
+			Expr::Variable(name) => write!(f, "{}", name),
+			Expr::Assign(name, value) => write!(f, "(assign {} = {})", name, value),
+		}
+	}
+}
+
+impl std::fmt::Debug for Expr {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			Expr::Binary(left, operator, right) => {
+				write!(f, "({:?} {:?} {:?})", left, operator, right)
+			}
+			Expr::Grouping(expr) => {
+				write!(f, "(group {:?})", expr)
+			}
+			Expr::Literal(token) => {
+				write!(f, "{:?}", token)
+			}
+			Expr::Unary(operator, right) => {
+				write!(f, "({:?} {:?})", operator, right)
+			}
+			Expr::Variable(name) => write!(f, "{:?}", name),
+			Expr::Assign(ident, value) => write!(f, "(assign {:?} `{:?}`)", ident, value),
+		}
+	}
+}
+
+impl std::fmt::Debug for Stmt {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			Stmt::Expression(expr) => write!(f, "{:?}", expr),
+			Stmt::Print(expr) => write!(f, "(print {:?})", expr),
+			Stmt::Var(name, expr) => match expr {
+				Some(expr) => write!(f, "(var {:?} `{:?}`)", name, expr),
+				None => write!(f, "(var {:?})", name),
+			},
+			Stmt::Block(stmts) => {
+				write!(f, "(block {{")?;
+				for stmt in stmts {
+					write!(f, " {:?}", stmt)?;
+				}
+				write!(f, " }})")?;
+				Ok(())
+			}
+		}
+	}
+}
+
 impl TryFrom<Expr> for Identifier {
 	type Error = parser::Error;
 

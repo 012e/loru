@@ -120,6 +120,7 @@ fn parse_var_statement(parser: &mut Parser) -> ParseResult<Stmt> {
 			Some(parse_expression(parser)?)
 		}
 		// for now we will just default to nil
+		// TODO: fix
 		_ => Some(Expr::Literal(Literal::Nil)),
 	};
 

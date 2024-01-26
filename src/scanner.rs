@@ -99,7 +99,7 @@ impl<'a> Scanner<'a> {
 			"true" => Ok(Some(Token::True)),
 			"var" => Ok(Some(Token::Var)),
 			"while" => Ok(Some(Token::While)),
-			_ => Ok(Some(Token::Identifier)),
+			name => Ok(Some(Token::Identifier(name.into()))),
 		}
 	}
 
@@ -314,15 +314,15 @@ if (a != b) {
 				Equal,
 				Semicolon,
 				Var,
-				Identifier,
+				Identifier("i".into()),
 				Equal,
 				Number(10.0),
 				Semicolon,
 				If,
 				LeftParen,
-				Identifier,
+				Identifier("a".into()),
 				BangEqual,
-				Identifier,
+				Identifier("b".into()),
 				RightParen,
 				LeftBrace,
 				Print,
