@@ -1,27 +1,28 @@
 #![feature(let_chains)]
 mod ast;
+mod environment;
 mod eval;
+mod interpreter;
 mod parser;
 mod scanner;
 mod token;
 
-// fn repl() -> ! {
-// let mut line: String = String::new();
-// loop {
-// 	line.clear();
-// 	print!(">>> ");
-// 	std::io::stdout().flush().unwrap();
-// 	std::io::stdin().read_line(&mut line).unwrap();
-// 	let source: &Vec<char> = &line.chars().collect::<Vec<_>>();
-// 	let (tokens, errors) = crate::scanner::Scanner::new(source).scan();
-// 	assert!(errors.is_empty());
-// 	match parser::parse(tokens) {
-// 		Ok(expr) => println!("{:?}", expr.eval()),
-// 		Err(e) => println!("parsing error: {:?}", e),
-// 	}
-// }
-// }
+use std::path::Path;
+
+use clap::Parser;
+
+#[derive(Parser)]
+struct Cli {
+	path: Option<String>,
+}
 
 fn main() {
-	// repl();
+	let cli = Cli::parse();
+	match cli.path {
+		Some(s) => {
+			let path = Path::new(&s);
+			interpreter::run_file(path);
+		}
+		None => interpreter::repl(),
+	}
 }

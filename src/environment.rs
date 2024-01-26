@@ -32,22 +32,6 @@ impl Environment {
 		})))
 	}
 
-	fn get_scoped(&self, name: &str) -> Option<Literal> {
-		let env = (*self.0).borrow();
-		match env.values.get(name) {
-			Some(value) => Some(value.clone()),
-			None => None,
-		}
-	}
-
-	fn is_scoped(&self, name: &str) -> bool {
-		let env = (*self.0).borrow();
-		match env.values.get(name) {
-			Some(_) => true,
-			None => false,
-		}
-	}
-
 	pub fn get(&self, name: &str) -> Option<Literal> {
 		let env = (*self.0).borrow();
 		match env.borrow().values.get(name) {
