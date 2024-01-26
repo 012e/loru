@@ -1,6 +1,6 @@
 empty_item_single_line = false
 format_strings = true
-hard_tabs = true
+tab_spaces = 2
 max_width = 90
 reorder_impl_items = true
 group_imports = "StdExternalCrate"

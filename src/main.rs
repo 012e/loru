@@ -13,16 +13,16 @@ use clap::Parser;
 
 #[derive(Parser)]
 struct Cli {
-	path: Option<String>,
+  path: Option<String>,
 }
 
 fn main() {
-	let cli = Cli::parse();
-	match cli.path {
-		Some(s) => {
-			let path = Path::new(&s);
-			interpreter::run_file(path);
-		}
-		None => interpreter::repl(),
-	}
+  let cli = Cli::parse();
+  match cli.path {
+    Some(s) => {
+      let path = Path::new(&s);
+      interpreter::run_file(path);
+    }
+    None => interpreter::repl(),
+  }
 }
