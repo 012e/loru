@@ -30,6 +30,12 @@ pub enum UnaryOperator {
 }
 
 #[derive(PartialEq, Clone)]
+pub enum LogicalOperator {
+  And,
+  Or,
+}
+
+#[derive(PartialEq, Clone)]
 pub enum Expr {
   Binary(Box<Expr>, Operator, Box<Expr>),
   Grouping(Box<Expr>),
@@ -37,6 +43,7 @@ pub enum Expr {
   Unary(UnaryOperator, Box<Expr>),
   Variable(Identifier),
   Assign(Identifier, Box<Expr>),
+  Logical(Box<Expr>, LogicalOperator, Box<Expr>),
 }
 
 pub type Identifier = String;
@@ -47,6 +54,7 @@ pub enum Stmt {
   Print(Expr),
   Var(Identifier, Option<Expr>),
   Block(Vec<Stmt>),
+  If(Expr, Box<Stmt>, Option<Box<Stmt>>),
 }
 
 impl std::fmt::Debug for Literal {
@@ -157,6 +165,15 @@ impl TryFrom<Token> for UnaryOperator {
   }
 }
 
+impl std::fmt::Display for LogicalOperator {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      LogicalOperator::And => write!(f, "and"),
+      LogicalOperator::Or => write!(f, "or"),
+    }
+  }
+}
+
 impl std::fmt::Display for Expr {
   fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
     match self {
@@ -174,6 +191,7 @@ impl std::fmt::Display for Expr {
       }
       Expr::Variable(name) => write!(f, "{}", name),
       Expr::Assign(name, value) => write!(f, "(assign {} = {})", name, value),
+      Expr::Logical(l, op, r) => write!(f, "({} {} {})", op, r, l),
     }
   }
 }
@@ -195,6 +213,7 @@ impl std::fmt::Debug for Expr {
       }
       Expr::Variable(name) => write!(f, "{:?}", name),
       Expr::Assign(ident, value) => write!(f, "(assign {:?} `{:?}`)", ident, value),
+      Expr::Logical(_, _, _) => todo!(),
     }
   }
 }
@@ -216,6 +235,7 @@ impl std::fmt::Debug for Stmt {
         write!(f, " }})")?;
         Ok(())
       }
+      Stmt::If(_, _, _) => todo!(),
     }
   }
 }

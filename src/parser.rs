@@ -3,7 +3,7 @@ use thiserror::Error;
 
 use crate::{
   ast::Expr,
-  ast::{Literal, Stmt},
+  ast::{Literal, LogicalOperator, Operator, Stmt},
   token::Token,
 };
 
@@ -13,6 +13,8 @@ pub enum Error {
   UnexpectedToken(Token),
   #[error("Missing ')' after expression")]
   MissingRightParen,
+  #[error("Missing '{0}'")]
+  MissingToken(Token),
   #[error("Missing '}}' after block")]
   MissingRightBrace,
   #[error("Missing ';' after expression")]
@@ -73,6 +75,17 @@ impl Parser {
       self.advance();
     }
   }
+
+  fn expect_or_error(&mut self, expected: Token, error: Error) -> Result<(), Error> {
+    match self.peek() {
+      Some(token) if token == expected => {
+        self.advance();
+        Ok(())
+      }
+      Some(_) => Err(error),
+      None => Err(Error::UnexpectedToken(Token::Eof)),
+    }
+  }
 }
 
 pub type ParseResult<T> = Result<T, Error>;
@@ -98,9 +111,26 @@ fn parse_statement(parser: &mut Parser) -> ParseResult<Stmt> {
     Some(Token::Print) => parse_print_statement(parser),
     Some(Token::Var) => parse_var_statement(parser),
     Some(Token::LeftBrace) => parse_block(parser),
+    Some(Token::If) => parse_if_statement(parser),
     Some(_) => parse_expression_statement(parser),
     None => Err(Error::UnexpectedToken(Token::Eof)),
   }
+}
+
+fn parse_if_statement(parser: &mut Parser) -> Result<Stmt, Error> {
+  parser.advance(); // ignore the if token
+  parser.expect_or_error(Token::LeftParen, Error::MissingToken(Token::LeftParen))?;
+  let expr = parse_expression(parser)?;
+  parser.expect_or_error(Token::RightParen, Error::MissingToken(Token::RightParen))?;
+  let then_branch = parse_statement(parser)?;
+  let else_branch = match parser.peek() {
+    Some(Token::Else) => {
+      parser.advance();
+      Some(Box::new(parse_statement(parser)?))
+    }
+    _ => None,
+  };
+  Ok(Stmt::If(expr, Box::new(then_branch), else_branch))
 }
 
 fn parse_var_statement(parser: &mut Parser) -> ParseResult<Stmt> {
@@ -162,8 +192,28 @@ fn parse_expression(parser: &mut Parser) -> ParseResult<Expr> {
   parse_assignment(parser)
 }
 
+fn parse_or(parser: &mut Parser) -> ParseResult<Expr> {
+  let mut expr = parse_and(parser)?;
+  while let Some(Token::Or) = parser.peek() {
+    parser.advance();
+    let right = parse_and(parser)?;
+    expr = Expr::Logical(Box::new(expr), LogicalOperator::Or, Box::new(right));
+  }
+  Ok(expr)
+}
+
+fn parse_and(parser: &mut Parser) -> ParseResult<Expr> {
+  let mut expr = parse_equality(parser)?;
+  while let Some(Token::And) = parser.peek() {
+    parser.advance();
+    let right = parse_equality(parser)?;
+    expr = Expr::Logical(Box::new(expr), LogicalOperator::And, Box::new(right));
+  }
+  Ok(expr)
+}
+
 fn parse_assignment(parser: &mut Parser) -> ParseResult<Expr> {
-  let expr = parse_equality(parser)?;
+  let expr = parse_or(parser)?;
   if let Some(Token::Equal) = parser.peek() {
     parser.advance();
     let value = parse_assignment(parser)?;
@@ -646,5 +696,103 @@ mod tests {
       Stmt::Print(Expr::Variable("new".into())),
     ]);
     assert!(stmts[0] == inner2);
+  }
+
+  #[test]
+  fn parse_if_statement() {
+    let tokens = vec![
+      Token::If,
+      Token::LeftParen,
+      Token::True,
+      Token::RightParen,
+      Token::LeftBrace,
+      Token::Print,
+      Token::Number(1.0),
+      Token::Semicolon,
+      Token::RightBrace,
+      Token::Eof,
+    ];
+    let (stmts, errors) = parse(tokens);
+    assert!(errors.is_empty());
+    assert!(stmts.len() == 1);
+    let expected = Stmt::If(
+      Expr::Literal(Literal::True),
+      Box::new(Stmt::Block(vec![Stmt::Print(Expr::Literal(
+        Literal::Number(1.0),
+      ))])),
+      None,
+    );
+    assert!(stmts == vec![expected]);
+  }
+
+  #[test]
+  fn parse_if_else_statement() {
+    let tokens = vec![
+      Token::If,
+      Token::LeftParen,
+      Token::True,
+      Token::RightParen,
+      Token::LeftBrace,
+      Token::Print,
+      Token::Number(1.0),
+      Token::Semicolon,
+      Token::RightBrace,
+      Token::Else,
+      Token::Print,
+      Token::Number(2.0),
+      Token::Semicolon,
+      Token::Eof,
+    ];
+    let (stmts, errors) = parse(tokens);
+    assert!(errors.is_empty());
+    assert!(stmts.len() == 1);
+    let then_branch = Stmt::Block(vec![Stmt::Print(Expr::Literal(Literal::Number(1.0)))]);
+    let else_branch = Stmt::Print(Expr::Literal(Literal::Number(2.0)));
+    let expected = Stmt::If(
+      Expr::Literal(Literal::True),
+      Box::new(then_branch),
+      Some(Box::new(else_branch)),
+    );
+    assert!(stmts == vec![expected]);
+  }
+
+  #[test]
+  fn test_parse_or() {
+    let tokens = vec![
+      Token::True,
+      Token::Or,
+      Token::False,
+      Token::Semicolon,
+      Token::Eof,
+    ];
+    let (stmts, errors) = parse(tokens);
+    assert!(errors.is_empty());
+    assert!(stmts.len() == 1);
+    let expected = Stmt::Expression(Expr::Logical(
+      Box::new(Expr::Literal(Literal::True)),
+      LogicalOperator::Or,
+      Box::new(Expr::Literal(Literal::False)),
+    ));
+    assert!(stmts == vec![expected]);
+  }
+
+  #[test]
+  fn test_parse_and() {
+    let tokens = vec![
+      Token::True,
+      Token::And,
+      Token::False,
+      Token::Semicolon,
+      Token::Eof,
+    ];
+    let (stmts, errors) = parse(tokens);
+    assert!(errors.is_empty());
+    assert!(stmts.len() == 1);
+    let expected = Stmt::Expression(Expr::Logical(
+      Box::new(Expr::Literal(Literal::True)),
+      LogicalOperator::And,
+      Box::new(Expr::Literal(Literal::False)),
+    ));
+    assert!(stmts == vec![expected]);
   }
 }

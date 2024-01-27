@@ -1,7 +1,5 @@
-use std::rc::Rc;
-
 use crate::{
-  ast::{self, Literal, Operator, Stmt, UnaryOperator},
+  ast::{self, Literal, LogicalOperator, Operator, Stmt, UnaryOperator},
   environment::Environment,
 };
 
@@ -21,6 +19,9 @@ pub enum Error {
 
   #[error("Undefined variable {0}")]
   UndefinedVariable(String),
+
+  #[error("Invalid condition, found {0}")]
+  InvalidCondition(Literal),
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -74,6 +75,30 @@ impl Evalable for ast::Expr {
         env.assign(&name, value.clone())?;
         Ok(value)
       }
+      ast::Expr::Logical(l, op, r) => match op {
+        LogicalOperator::Or => {
+          let left = l.eval(env)?;
+          if left == Literal::True {
+            return Ok(Literal::True);
+          }
+          let right = r.eval(env)?;
+          if right == Literal::True {
+            return Ok(Literal::True);
+          }
+          Ok(Literal::False)
+        }
+        LogicalOperator::And => {
+          let left = l.eval(env)?;
+          if left == Literal::False {
+            return Ok(Literal::False);
+          }
+          let right = r.eval(env)?;
+          if right == Literal::False {
+            return Ok(Literal::False);
+          }
+          Ok(Literal::True)
+        }
+      },
     }
   }
 }
@@ -103,6 +128,17 @@ impl Evalable for Stmt {
         let new_env = env.new_enclosed();
         for stmt in stmts {
           stmt.eval(&new_env)?;
+        }
+      }
+      Stmt::If(cond, true_branch, false_branch) => {
+        let cond = cond.eval(env)?;
+        match cond {
+          Literal::True => true_branch.eval(env)?,
+          Literal::False => match false_branch {
+            Some(stmt) => stmt.eval(env)?,
+            None => (),
+          },
+          literal => return Err(Error::InvalidCondition(literal)),
         }
       }
     };
@@ -298,5 +334,63 @@ mod tests {
     .eval(&env)
     .unwrap();
     assert!(env.get("a").unwrap() == Literal::Number(2.0));
+  }
+
+  #[test]
+  fn test_if() {
+    let env = Environment::new();
+    // var a = 1;
+    // if (a == 1)
+    //   a = 2;
+    Stmt::Var("a".into(), Some(Expr::Literal(Literal::Number(1.0))))
+      .eval(&env)
+      .unwrap();
+    Stmt::If(
+      Expr::Binary(
+        Box::new(Expr::Variable("a".into())),
+        Operator::EqualEqual,
+        Box::new(Expr::Literal(Literal::Number(1.0))),
+      ),
+      Box::new(Stmt::Expression(Expr::Assign(
+        "a".into(),
+        Box::new(Expr::Literal(Literal::Number(2.0))),
+      ))),
+      None,
+    )
+    .eval(&env)
+    .unwrap();
+    assert!(env.get("a").unwrap() == Literal::Number(2.0));
+  }
+  #[test]
+  fn test_if_else() {
+    let env = Environment::new();
+    // var a = 1;
+    // if (a == 2)
+    //   a = 2;
+    // else
+    //   a = 3;
+    Stmt::Var("a".into(), Some(Expr::Literal(Literal::Number(1.0))))
+      .eval(&env)
+      .unwrap();
+    let then_branch = Stmt::Expression(Expr::Assign(
+      "a".into(),
+      Box::new(Expr::Literal(Literal::Number(2.0))),
+    ));
+    let else_branch = Stmt::Expression(Expr::Assign(
+      "a".into(),
+      Box::new(Expr::Literal(Literal::Number(3.0))),
+    ));
+    Stmt::If(
+      Expr::Binary(
+        Box::new(Expr::Variable("a".into())),
+        Operator::EqualEqual,
+        Box::new(Expr::Literal(Literal::Number(2.0))),
+      ),
+      Box::new(then_branch),
+      Some(Box::new(else_branch)),
+    )
+    .eval(&env)
+    .unwrap();
+    assert!(env.get("a").unwrap() == Literal::Number(3.0));
   }
 }
