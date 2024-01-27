@@ -55,6 +55,7 @@ pub enum Stmt {
   Var(Identifier, Option<Expr>),
   Block(Vec<Stmt>),
   If(Expr, Box<Stmt>, Option<Box<Stmt>>),
+  While(Expr, Box<Stmt>),
 }
 
 impl std::fmt::Debug for Literal {
@@ -236,6 +237,7 @@ impl std::fmt::Debug for Stmt {
         Ok(())
       }
       Stmt::If(_, _, _) => todo!(),
+      Stmt::While(_, _) => todo!(),
     }
   }
 }

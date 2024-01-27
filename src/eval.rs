@@ -3,7 +3,7 @@ use crate::{
   environment::Environment,
 };
 
-#[derive(Debug, thiserror::Error, PartialEq)]
+#[derive(Debug, thiserror::Error, PartialEq, Clone)]
 pub enum Error {
   #[error("Unmatched type {0} {1} {2}")]
   UnmatchedType(Literal, Operator, Literal),
@@ -28,38 +28,41 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 pub trait Evalable {
   type Output;
-  fn eval(self, environment: &Environment) -> Result<Self::Output, Error>;
+  fn eval(&self, environment: &Environment) -> Result<Self::Output, Error>;
 }
 
 trait TryApplyBinary {
   type Error;
-  fn try_apply_binary(self, op: Operator, other: Literal)
-  -> Result<Literal, Self::Error>;
+  fn try_apply_binary(
+    &self,
+    op: &Operator,
+    other: &Literal,
+  ) -> Result<Literal, Self::Error>;
 }
 
 trait TryApplyUnary {
   type Error;
-  fn try_apply_unary(self, op: UnaryOperator) -> Result<Literal, Self::Error>;
+  fn try_apply_unary(&self, op: &UnaryOperator) -> Result<Literal, Self::Error>;
 }
 
 impl Evalable for ast::Literal {
   type Output = Literal;
 
-  fn eval(self, _: &Environment) -> Result<Literal, Error> {
-    Ok(self)
+  fn eval(&self, _: &Environment) -> Result<Literal, Error> {
+    Ok(self.clone())
   }
 }
 
 impl Evalable for ast::Expr {
   type Output = Literal;
 
-  fn eval(self, env: &Environment) -> Result<Literal, Error> {
+  fn eval(&self, env: &Environment) -> Result<Literal, Error> {
     match self {
       ast::Expr::Literal(lit) => lit.eval(env),
       ast::Expr::Binary(lexpr, op, rexpr) => {
         let left_result = lexpr.eval(env)?;
         let right_result = rexpr.eval(env)?;
-        left_result.try_apply_binary(op, right_result)
+        left_result.try_apply_binary(op, &right_result).clone()
       }
       ast::Expr::Unary(op, expr) => {
         let result = expr.eval(env)?;
@@ -68,7 +71,7 @@ impl Evalable for ast::Expr {
       ast::Expr::Grouping(expr) => expr.eval(env),
       ast::Expr::Variable(name) => match env.get(&name) {
         Some(value) => Ok(value),
-        None => Err(Error::UndefinedVariable(name)),
+        None => Err(Error::UndefinedVariable(name.to_owned())),
       },
       ast::Expr::Assign(name, value) => {
         let value = value.eval(env)?;
@@ -106,7 +109,7 @@ impl Evalable for ast::Expr {
 impl Evalable for Stmt {
   type Output = ();
 
-  fn eval(self, env: &Environment) -> Result<(), crate::eval::Error> {
+  fn eval(&self, env: &Environment) -> Result<(), crate::eval::Error> {
     match self {
       Stmt::Expression(expr) => {
         expr.eval(env)?;
@@ -141,6 +144,11 @@ impl Evalable for Stmt {
           literal => return Err(Error::InvalidCondition(literal)),
         }
       }
+      Stmt::While(expr, stmt) => {
+        while let Literal::True = expr.eval(env)? {
+          stmt.eval(env)?;
+        }
+      }
     };
     Ok(())
   }
@@ -149,13 +157,13 @@ impl Evalable for Stmt {
 impl TryApplyUnary for Literal {
   type Error = Error;
 
-  fn try_apply_unary(self, op: UnaryOperator) -> Result<Literal, Self::Error> {
+  fn try_apply_unary(&self, op: &UnaryOperator) -> Result<Literal, Self::Error> {
     match (op, &self) {
       (UnaryOperator::Minus, Literal::Number(n)) => Ok(Literal::Number(-n)),
       (UnaryOperator::Bang, Literal::False) => Ok(Literal::True),
       (UnaryOperator::Bang, Literal::True) => Ok(Literal::False),
       (UnaryOperator::Bang, Literal::Nil) => Ok(Literal::True),
-      _ => Err(Error::CantApplyUnaryOperator(self)),
+      _ => Err(Error::CantApplyUnaryOperator(self.clone())),
     }
   }
 }
@@ -164,11 +172,11 @@ impl TryApplyBinary for Literal {
   type Error = Error;
 
   fn try_apply_binary(
-    self,
-    op: Operator,
-    other: Literal,
+    &self,
+    op: &Operator,
+    other: &Literal,
   ) -> Result<Literal, Self::Error> {
-    match (&self, op, &other) {
+    match (self, op, &other) {
       (Literal::False, Operator::EqualEqual, Literal::True) => Ok(Literal::False),
       (Literal::True, Operator::EqualEqual, Literal::False) => Ok(Literal::False),
       (Literal::True, Operator::EqualEqual, Literal::True) => Ok(Literal::True),
@@ -209,6 +217,34 @@ impl TryApplyBinary for Literal {
           Ok(Literal::True)
         }
       }
+      (Literal::Number(l), Operator::Less, Literal::Number(r)) => {
+        if l < r {
+          Ok(Literal::True)
+        } else {
+          Ok(Literal::False)
+        }
+      }
+      (Literal::Number(l), Operator::LessEqual, Literal::Number(r)) => {
+        if l <= r {
+          Ok(Literal::True)
+        } else {
+          Ok(Literal::False)
+        }
+      }
+      (Literal::Number(l), Operator::Greater, Literal::Number(r)) => {
+        if l > r {
+          Ok(Literal::True)
+        } else {
+          Ok(Literal::False)
+        }
+      }
+      (Literal::Number(l), Operator::GreaterEqual, Literal::Number(r)) => {
+        if l >= r {
+          Ok(Literal::True)
+        } else {
+          Ok(Literal::False)
+        }
+      }
       (Literal::String(l), Operator::EqualEqual, Literal::String(r)) => {
         if l == r {
           Ok(Literal::True)
@@ -225,9 +261,13 @@ impl TryApplyBinary for Literal {
       }
       (l, op, r) => {
         if std::mem::discriminant(l) != std::mem::discriminant(r) {
-          return Err(Error::UnmatchedType(self, op, other));
+          return Err(Error::UnmatchedType(
+            self.clone(),
+            op.clone(),
+            other.clone(),
+          ));
         }
-        Err(Error::UnsupportedOperator(op, other))
+        Err(Error::UnsupportedOperator(op.clone(), other.clone()))
       }
     }
   }
@@ -392,5 +432,26 @@ mod tests {
     .eval(&env)
     .unwrap();
     assert!(env.get("a").unwrap() == Literal::Number(3.0));
+  }
+
+  #[test]
+  fn test_and() {
+    let env = Environment::new();
+    // var a = 1;
+    // true or a = 2;
+    Stmt::Var("a".into(), Some(Expr::Literal(Literal::Number(1.0))))
+      .eval(&env)
+      .unwrap();
+    Stmt::Expression(Expr::Logical(
+      Box::new(Expr::Literal(Literal::True)),
+      LogicalOperator::Or,
+      Box::new(Expr::Assign(
+        "a".into(),
+        Box::new(Expr::Literal(Literal::Number(2.0))),
+      )),
+    ))
+    .eval(&env)
+    .unwrap();
+    assert!(env.get("a").unwrap() == Literal::Number(1.0));
   }
 }

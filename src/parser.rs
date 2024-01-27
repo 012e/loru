@@ -3,7 +3,7 @@ use thiserror::Error;
 
 use crate::{
   ast::Expr,
-  ast::{Literal, LogicalOperator, Operator, Stmt},
+  ast::{Literal, LogicalOperator, Stmt},
   token::Token,
 };
 
@@ -112,9 +112,19 @@ fn parse_statement(parser: &mut Parser) -> ParseResult<Stmt> {
     Some(Token::Var) => parse_var_statement(parser),
     Some(Token::LeftBrace) => parse_block(parser),
     Some(Token::If) => parse_if_statement(parser),
+    Some(Token::While) => parse_while_statement(parser),
     Some(_) => parse_expression_statement(parser),
     None => Err(Error::UnexpectedToken(Token::Eof)),
   }
+}
+
+fn parse_while_statement(parser: &mut Parser) -> ParseResult<Stmt> {
+  parser.advance(); // ignore the while token
+  parser.expect_or_error(Token::LeftParen, Error::MissingToken(Token::LeftParen))?;
+  let expr = parse_expression(parser)?;
+  parser.expect_or_error(Token::RightParen, Error::MissingToken(Token::RightParen))?;
+  let body = parse_statement(parser)?;
+  Ok(Stmt::While(expr, Box::new(body)))
 }
 
 fn parse_if_statement(parser: &mut Parser) -> Result<Stmt, Error> {
@@ -793,6 +803,32 @@ mod tests {
       LogicalOperator::And,
       Box::new(Expr::Literal(Literal::False)),
     ));
+    assert!(stmts == vec![expected]);
+  }
+
+  #[test]
+  fn test_while() {
+    let tokens = vec![
+      Token::While,
+      Token::LeftParen,
+      Token::True,
+      Token::RightParen,
+      Token::LeftBrace,
+      Token::Print,
+      Token::Number(1.0),
+      Token::Semicolon,
+      Token::RightBrace,
+      Token::Eof,
+    ];
+    let (stmts, errors) = parse(tokens);
+    assert!(errors.is_empty());
+    assert!(stmts.len() == 1);
+    let expected = Stmt::While(
+      Expr::Literal(Literal::True),
+      Box::new(Stmt::Block(vec![Stmt::Print(Expr::Literal(
+        Literal::Number(1.0),
+      ))])),
+    );
     assert!(stmts == vec![expected]);
   }
 }
