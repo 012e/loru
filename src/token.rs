@@ -42,6 +42,8 @@ pub enum Token {
   True,
   Var,
   While,
+  Break,
+  Continue,
 
   Eof,
 }
@@ -122,6 +124,8 @@ impl std::fmt::Display for Token {
       Token::True => f.write_str("true"),
       Token::Var => f.write_str("var"),
       Token::While => f.write_str("while"),
+      Token::Break => todo!(),
+      Token::Continue => todo!(),
     }
   }
 }

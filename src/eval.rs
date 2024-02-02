@@ -1,5 +1,7 @@
+use std::ops::ControlFlow;
+
 use crate::{
-  ast::{self, Literal, LogicalOperator, Operator, Stmt, UnaryOperator},
+  ast::{self, Expr, Literal, LogicalOperator, Operator, Stmt, UnaryOperator},
   environment::Environment,
 };
 
@@ -106,10 +108,19 @@ impl Evalable for ast::Expr {
   }
 }
 
-impl Evalable for Stmt {
-  type Output = ();
+#[derive(Debug, PartialEq, Clone)]
+pub enum Flow {
+  // the same as Return(Litertal)
+  Return(Literal),
+  Break,
+  Continue,
+  None,
+}
 
-  fn eval(&self, env: &Environment) -> Result<(), crate::eval::Error> {
+impl Evalable for Stmt {
+  type Output = Flow;
+
+  fn eval(&self, env: &Environment) -> Result<Flow, crate::eval::Error> {
     match self {
       Stmt::Expression(expr) => {
         expr.eval(env)?;
@@ -130,15 +141,32 @@ impl Evalable for Stmt {
       Stmt::Block(stmts) => {
         let new_env = env.new_enclosed();
         for stmt in stmts {
-          stmt.eval(&new_env)?;
+          match stmt.eval(&new_env)? {
+            Flow::Break => return Ok(Flow::Break),
+            Flow::Continue => return Ok(Flow::Continue),
+            Flow::Return(literal) => return Ok(Flow::Return(literal)),
+            _ => (),
+          };
         }
       }
       Stmt::If(cond, true_branch, false_branch) => {
         let cond = cond.eval(env)?;
         match cond {
-          Literal::True => true_branch.eval(env)?,
+          Literal::True => {
+            match true_branch.eval(env)? {
+              Flow::Break => return Ok(Flow::Break),
+              Flow::Continue => return Ok(Flow::Continue),
+              Flow::Return(literal) => return Ok(Flow::Return(literal)),
+              _ => (),
+            };
+          }
           Literal::False => match false_branch {
-            Some(stmt) => stmt.eval(env)?,
+            Some(stmt) => match stmt.eval(env)? {
+              Flow::Break => return Ok(Flow::Break),
+              Flow::Continue => return Ok(Flow::Continue),
+              Flow::Return(literal) => return Ok(Flow::Return(literal)),
+              _ => (),
+            },
             None => (),
           },
           literal => return Err(Error::InvalidCondition(literal)),
@@ -146,11 +174,58 @@ impl Evalable for Stmt {
       }
       Stmt::While(expr, stmt) => {
         while let Literal::True = expr.eval(env)? {
-          stmt.eval(env)?;
+          match stmt.eval(env)? {
+            // consume break
+            Flow::Break => return Ok(Flow::None),
+            // consume continue
+            Flow::Continue => (),
+            Flow::Return(literal) => return Ok(Flow::Return(literal)),
+            _ => (),
+          };
         }
       }
+      Stmt::For(oinit, ocond, oincre, stmt) => {
+        let for_env = env.new_enclosed();
+        let mut stmts = vec![stmt];
+        if let Some(init) = oinit {
+          init.eval(&for_env)?;
+        }
+        let incre = if let Some(incre) = oincre {
+          Box::new(Stmt::Expression(incre.clone()))
+        } else {
+          Box::new(Stmt::Expression(Expr::Literal(Literal::Nil)))
+        };
+        stmts.push(&incre);
+        if let Some(cond) = ocond {
+          while let Literal::True = cond.eval(&for_env)? {
+            for stmt in &stmts {
+              match stmt.eval(&for_env)? {
+                // consume break
+                Flow::Break => return Ok(Flow::None),
+                // consume continue
+                Flow::Continue => (),
+                Flow::Return(literal) => return Ok(Flow::Return(literal)),
+                _ => (),
+              };
+            }
+          }
+        } else {
+          loop {
+            match stmt.eval(&for_env)? {
+              // consume break
+              Flow::Break => return Ok(Flow::None),
+              // consume continue
+              Flow::Continue => (),
+              Flow::Return(literal) => return Ok(Flow::Return(literal)),
+              _ => (),
+            };
+          }
+        }
+      }
+      Stmt::Break => return Ok(Flow::Break),
+      Stmt::Continue => return Ok(Flow::Continue),
     };
-    Ok(())
+    Ok(Flow::None)
   }
 }
 
@@ -278,7 +353,10 @@ mod tests {
   use assert2::{assert, let_assert};
 
   use super::*;
-  use crate::{ast::Expr, environment::Environment};
+  use crate::{
+    ast::{Expr, Identifier},
+    environment::Environment,
+  };
 
   #[test]
   fn test_eval() {
@@ -287,7 +365,7 @@ mod tests {
       Operator::Slash,
       Box::new(Expr::Literal(Literal::Number(2.0))),
     ));
-    assert_eq!(statement.eval(&Environment::new()).unwrap(), ());
+    assert_eq!(statement.eval(&Environment::new()).unwrap(), Flow::None);
   }
 
   #[test]
@@ -307,9 +385,9 @@ mod tests {
       Operator::BangEqual,
       Box::new(Expr::Literal(Literal::Number(2.0))),
     ));
-    assert_eq!(statement1.eval(&Environment::new()).unwrap(), ());
-    assert_eq!(statement2.eval(&Environment::new()).unwrap(), ());
-    assert_eq!(statement3.eval(&Environment::new()).unwrap(), ());
+    assert_eq!(statement1.eval(&Environment::new()).unwrap(), Flow::None);
+    assert_eq!(statement2.eval(&Environment::new()).unwrap(), Flow::None);
+    assert_eq!(statement3.eval(&Environment::new()).unwrap(), Flow::None);
   }
 
   #[test]
@@ -345,7 +423,7 @@ mod tests {
   #[test]
   fn test_print() {
     let stmt = ast::Stmt::Print(ast::Expr::Literal(Literal::Number(1.0)));
-    assert_eq!(stmt.eval(&Environment::new()).unwrap(), ());
+    assert_eq!(stmt.eval(&Environment::new()).unwrap(), Flow::None);
   }
 
   #[test]
@@ -453,5 +531,184 @@ mod tests {
     .eval(&env)
     .unwrap();
     assert!(env.get("a").unwrap() == Literal::Number(1.0));
+  }
+
+  #[test]
+  fn test_while() -> Result<(), Error> {
+    let env = Environment::new();
+    // var a = 1;
+    // while (a < 3)
+    //   a = a + 1;
+    Stmt::Var("a".into(), Some(Expr::Literal(Literal::Number(1.0)))).eval(&env)?;
+    let cond = Expr::Binary(
+      Box::new(Expr::Variable("a".into())),
+      Operator::Less,
+      Box::new(Expr::Literal(Literal::Number(3.0))),
+    );
+    let assign = Stmt::Expression(Expr::Assign(
+      "a".into(),
+      Box::new(Expr::Binary(
+        Box::new(Expr::Variable("a".into())),
+        Operator::Plus,
+        Box::new(Expr::Literal(Literal::Number(1.0))),
+      )),
+    ));
+    let flow = Stmt::While(cond, Box::new(assign)).eval(&env)?;
+    assert!(flow == Flow::None);
+    assert!(env.get("a").unwrap() == Literal::Number(3.0));
+    Ok(())
+  }
+
+  #[test]
+  fn test_for() -> Result<(), Error> {
+    let env = Environment::new();
+    // var result = 0;
+    // for (var a = 1; a <= 3; a = a + 1) result += a;
+    let init = Stmt::Var("a".into(), Some(Expr::Literal(Literal::Number(1.0))));
+    let cond = Expr::Binary(
+      Box::new(Expr::Variable("a".into())),
+      Operator::LessEqual,
+      Box::new(Expr::Literal(Literal::Number(3.0))),
+    );
+    let assign = Expr::Assign(
+      "a".into(),
+      Box::new(Expr::Binary(
+        Box::new(Expr::Variable("a".into())),
+        Operator::Plus,
+        Box::new(Expr::Literal(Literal::Number(1.0))),
+      )),
+    );
+    let stmt = Stmt::Expression(Expr::Assign(
+      "result".into(),
+      Box::new(Expr::Binary(
+        Box::new(Expr::Variable("result".into())),
+        Operator::Plus,
+        Box::new(Expr::Variable("a".into())),
+      )),
+    ));
+    Stmt::Var("result".into(), Some(Expr::Literal(Literal::Number(0.0)))).eval(&env)?;
+    let flow = Stmt::For(
+      Some(Box::new(init)),
+      Some(cond),
+      Some(assign),
+      Box::new(stmt),
+    )
+    .eval(&env)?;
+    assert!(flow == Flow::None);
+    assert!(env.get("result").unwrap() == Literal::Number(6.0));
+    Ok(())
+  }
+
+  #[test]
+  fn test_break() {
+    let env = Environment::new();
+    // for (var a = 1; a <= 5; a = a + 1) {
+    //   result += a;
+    //   if (a == 3) break;
+    // }
+    Stmt::Var("result".into(), Some(Expr::Literal(Literal::Number(0.0))))
+      .eval(&env)
+      .unwrap();
+    let init = Stmt::Var("a".into(), Some(Expr::Literal(Literal::Number(1.0))));
+    let cond = Expr::Binary(
+      Box::new(Expr::Variable("a".into())),
+      Operator::LessEqual,
+      Box::new(Expr::Literal(Literal::Number(5.0))),
+    );
+    let increment = Expr::Assign(
+      "a".into(),
+      Box::new(Expr::Binary(
+        Box::new(Expr::Variable("a".into())),
+        Operator::Plus,
+        Box::new(Expr::Literal(Literal::Number(1.0))),
+      )),
+    );
+    let stmt = Stmt::Block(vec![
+      Stmt::Expression(Expr::Assign(
+        "result".into(),
+        Box::new(Expr::Binary(
+          Box::new(Expr::Variable("result".into())),
+          Operator::Plus,
+          Box::new(Expr::Variable("a".into())),
+        )),
+      )),
+      Stmt::If(
+        Expr::Binary(
+          Box::new(Expr::Variable("a".into())),
+          Operator::EqualEqual,
+          Box::new(Expr::Literal(Literal::Number(3.0))),
+        ),
+        Box::new(Stmt::Break),
+        None,
+      ),
+    ]);
+    let flow = Stmt::For(
+      Some(Box::new(init)),
+      Some(cond),
+      Some(increment),
+      Box::new(stmt),
+    )
+    .eval(&env)
+    .unwrap();
+
+    assert!(flow == Flow::None);
+    assert!(env.get("result").unwrap() == Literal::Number(6.0));
+  }
+
+  #[test]
+  fn test_continue() {
+    let env = Environment::new();
+    // var result = 0;
+    // for (var a = 1; a <= 5; a = a + 1) {
+    //   if (a == 3) continue;
+    //   result += a;
+    // }
+    Stmt::Var("result".into(), Some(Expr::Literal(Literal::Number(0.0))))
+      .eval(&env)
+      .unwrap();
+    let init = Stmt::Var("a".into(), Some(Expr::Literal(Literal::Number(1.0))));
+    let cond = Expr::Binary(
+      Box::new(Expr::Variable("a".into())),
+      Operator::LessEqual,
+      Box::new(Expr::Literal(Literal::Number(5.0))),
+    );
+    let increment = Expr::Assign(
+      "a".into(),
+      Box::new(Expr::Binary(
+        Box::new(Expr::Variable("a".into())),
+        Operator::Plus,
+        Box::new(Expr::Literal(Literal::Number(1.0))),
+      )),
+    );
+    let stmt = Stmt::Block(vec![
+      Stmt::If(
+        Expr::Binary(
+          Box::new(Expr::Variable("a".into())),
+          Operator::EqualEqual,
+          Box::new(Expr::Literal(Literal::Number(3.0))),
+        ),
+        Box::new(Stmt::Continue),
+        None,
+      ),
+      Stmt::Expression(Expr::Assign(
+        "result".into(),
+        Box::new(Expr::Binary(
+          Box::new(Expr::Variable("result".into())),
+          Operator::Plus,
+          Box::new(Expr::Variable("a".into())),
+        )),
+      )),
+    ]);
+    let flow = Stmt::For(
+      Some(Box::new(init)),
+      Some(cond),
+      Some(increment),
+      Box::new(stmt),
+    )
+    .eval(&env)
+    .unwrap();
+
+    assert!(flow == Flow::None);
+    assert!(env.get("result").unwrap() == Literal::Number(12.0));
   }
 }

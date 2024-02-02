@@ -99,6 +99,7 @@ impl<'a> Scanner<'a> {
       "true" => Ok(Some(Token::True)),
       "var" => Ok(Some(Token::Var)),
       "while" => Ok(Some(Token::While)),
+      "break" => Ok(Some(Token::Break)),
       name => Ok(Some(Token::Identifier(name.into()))),
     }
   }

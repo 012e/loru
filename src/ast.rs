@@ -56,6 +56,9 @@ pub enum Stmt {
   Block(Vec<Stmt>),
   If(Expr, Box<Stmt>, Option<Box<Stmt>>),
   While(Expr, Box<Stmt>),
+  For(Option<Box<Stmt>>, Option<Expr>, Option<Expr>, Box<Stmt>),
+  Break,
+  Continue,
 }
 
 impl std::fmt::Debug for Literal {
@@ -238,6 +241,11 @@ impl std::fmt::Debug for Stmt {
       }
       Stmt::If(_, _, _) => todo!(),
       Stmt::While(_, _) => todo!(),
+      Stmt::For(_, _, _, _) => {
+        todo!()
+      }
+      Stmt::Break => todo!(),
+      Stmt::Continue => todo!(),
     }
   }
 }

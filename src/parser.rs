@@ -108,14 +108,66 @@ pub fn parse(tokens: Vec<Token>) -> (Vec<Stmt>, Vec<Error>) {
 
 fn parse_statement(parser: &mut Parser) -> ParseResult<Stmt> {
   match parser.peek() {
+    // TODO: is this good?
+    Some(Token::Semicolon) => {
+      parser.advance();
+      if !parser.is_at_end() {
+        return parse_statement(parser);
+      } else {
+        return Ok(Stmt::Expression(Expr::Literal(Literal::Nil)));
+      };
+    }
+    Some(Token::Break) => {
+      parser.advance();
+      parser.expect_or_error(Token::Semicolon, Error::MissingSemicolon)?;
+      Ok(Stmt::Break)
+    }
+    Some(Token::Continue) => {
+      parser.advance();
+      parser.expect_or_error(Token::Semicolon, Error::MissingSemicolon)?;
+      Ok(Stmt::Continue)
+    }
     Some(Token::Print) => parse_print_statement(parser),
     Some(Token::Var) => parse_var_statement(parser),
     Some(Token::LeftBrace) => parse_block(parser),
     Some(Token::If) => parse_if_statement(parser),
     Some(Token::While) => parse_while_statement(parser),
+    Some(Token::For) => parse_for_statement(parser),
     Some(_) => parse_expression_statement(parser),
     None => Err(Error::UnexpectedToken(Token::Eof)),
   }
+}
+
+fn parse_for_statement(parser: &mut Parser) -> Result<Stmt, Error> {
+  parser.advance(); // ignore the for token
+  parser.expect_or_error(Token::LeftParen, Error::MissingToken(Token::LeftParen))?;
+  let init: Option<Box<Stmt>> = match parser.peek() {
+    Some(Token::Semicolon) => {
+      parser.advance();
+      None
+    }
+    Some(_) => Some(Box::new(parse_statement(parser)?)),
+    None => return Err(Error::UnexpectedToken(Token::Eof)),
+  };
+
+  let cond: Option<Expr> = match parser.peek() {
+    Some(Token::Semicolon) => {
+      parser.advance();
+      None
+    }
+    Some(_) => Some(parse_expression(parser)?),
+    None => return Err(Error::UnexpectedToken(Token::Eof)),
+  };
+  parser.advance(); // ignore the semicolon
+
+  let increment: Option<Expr> = match parser.peek() {
+    Some(Token::LeftBrace) => None,
+    Some(_) => Some(parse_expression(parser)?),
+    None => return Err(Error::UnexpectedToken(Token::Eof)),
+  };
+  parser.expect_or_error(Token::RightParen, Error::MissingToken(Token::RightParen))?;
+  let stmt = parse_statement(parser)?;
+  Ok(Stmt::For(init, cond, increment, Box::new(stmt)))
 }
 
 fn parse_while_statement(parser: &mut Parser) -> ParseResult<Stmt> {
@@ -831,4 +883,20 @@ mod tests {
     );
     assert!(stmts == vec![expected]);
   }
+
+  // #[test]
+  // fn test_for() {
+  //   let tokens = vec![
+  //     Token::For,
+  //     Token::LeftParen,
+  //     Token::Semicolon,
+  //     Token::Semicolon,
+  //     Token::RightParen,
+  //     Token::LeftBrace,
+  //     Token::Print,
+  //     Token::Number(1.0),
+  //     Token::Semicolon,
+  //
+  //   ];
+  // }
 }
