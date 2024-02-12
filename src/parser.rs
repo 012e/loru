@@ -7,6 +7,8 @@ use crate::{
   token::Token,
 };
 
+const ARGUMENT_LIMIT: usize = 255;
+
 #[derive(Error, Debug, PartialEq)]
 pub enum Error {
   #[error("Unexpected token {0:?}")]
@@ -127,6 +129,8 @@ fn parse_statement(parser: &mut Parser) -> ParseResult<Stmt> {
       parser.expect_or_error(Token::Semicolon, Error::MissingSemicolon)?;
       Ok(Stmt::Continue)
     }
+    Some(Token::Return) => parse_return_statement(parser),
+    Some(Token::Fun) => parse_function_declaration(parser),
     Some(Token::Print) => parse_print_statement(parser),
     Some(Token::Var) => parse_var_statement(parser),
     Some(Token::LeftBrace) => parse_block(parser),
@@ -136,6 +140,52 @@ fn parse_statement(parser: &mut Parser) -> ParseResult<Stmt> {
     Some(_) => parse_expression_statement(parser),
     None => Err(Error::UnexpectedToken(Token::Eof)),
   }
+}
+
+fn parse_return_statement(parser: &mut Parser) -> Result<Stmt, Error> {
+  parser.advance(); // ignore the return token
+  match parser.peek() {
+    Some(Token::Semicolon) => {
+      parser.advance();
+      Ok(Stmt::Return(None))
+    }
+    Some(_) => {
+      let expr = parse_expression(parser)?;
+      parser.expect_or_error(Token::Semicolon, Error::MissingSemicolon)?;
+      Ok(Stmt::Return(Some(expr)))
+    }
+    None => Err(Error::UnexpectedToken(Token::Eof)),
+  }
+}
+
+fn parse_identifier(parser: &mut Parser) -> Result<String, Error> {
+  match parser.peek() {
+    Some(Token::Identifier(name)) => {
+      parser.advance();
+      Ok(name)
+    }
+    Some(_) => Err(Error::MissingVariableName),
+    None => Err(Error::UnexpectedToken(Token::Eof)),
+  }
+}
+
+fn parse_function_declaration(parser: &mut Parser) -> Result<Stmt, Error> {
+  parser.advance(); // ignore fun token
+  let fn_name = parse_identifier(parser)?;
+
+  let arguments = parse_sequence(
+    parser,
+    ParseSequenceOptions {
+      opening: Some(Token::LeftParen),
+      closing: Some(Token::RightParen),
+      seperator: Some(Token::Comma),
+      parse_fn: parse_identifier,
+    },
+  )?;
+
+  let block = parse_block(parser)?;
+
+  Ok(Stmt::Function(fn_name, arguments, Box::new(block)))
 }
 
 fn parse_for_statement(parser: &mut Parser) -> Result<Stmt, Error> {
@@ -338,9 +388,102 @@ fn parse_unary(parser: &mut Parser) -> ParseResult<Expr> {
       let right = parse_unary(parser)?;
       Ok(Expr::Unary(operator.try_into()?, Box::new(right)))
     }
-    Some(_) => parse_primary(parser),
+    Some(_) => parse_call(parser),
     None => Err(Error::UnexpectedToken(Token::Eof)),
   }
+}
+
+fn parse_call(parser: &mut Parser) -> Result<Expr, Error> {
+  let expr = parse_primary(parser)?;
+  loop {
+    let current = parser.peek();
+    match current {
+      Some(Token::LeftParen) => {
+        let arguments = parse_sequence(
+          parser,
+          ParseSequenceOptions {
+            opening: Some(Token::LeftParen),
+            closing: Some(Token::RightParen),
+            seperator: Some(Token::Comma),
+            parse_fn: parse_expression,
+          },
+        )?;
+        return Ok(Expr::Call(Box::new(expr), arguments));
+      }
+      Some(Token::Dot) => {
+        todo!();
+      }
+      _ => break,
+    }
+  }
+  Ok(expr)
+}
+
+struct ParseSequenceOptions<T> {
+  opening: Option<Token>,
+  closing: Option<Token>,
+  seperator: Option<Token>,
+  parse_fn: fn(&mut Parser) -> Result<T, Error>,
+}
+
+fn parse_sequence<T>(
+  parser: &mut Parser,
+  option: ParseSequenceOptions<T>,
+) -> Result<Vec<T>, Error> {
+  let mut sequence: Vec<T> = vec![];
+  let opening = option.opening.clone();
+  let closing = match option.closing {
+    Some(c) => c,
+    None => Token::Eof,
+  };
+  let seperator = option.seperator.clone();
+
+  match opening {
+    Some(t) => parser.expect_or_error(t.clone(), Error::MissingToken(t.clone()))?,
+    None => (),
+  }
+  match parser.peek() {
+    Some(t) if t == closing => {
+      parser.advance();
+      return Ok(sequence);
+    }
+    Some(_) => (),
+    None => return Err(Error::UnexpectedToken(Token::Eof)),
+  }
+
+  match seperator {
+    Some(sep) => loop {
+      if parser.is_at_end() {
+        return Err(Error::UnexpectedToken(Token::Eof));
+      }
+      sequence.push((option.parse_fn)(parser)?);
+      match parser.peek() {
+        Some(t) if t == closing => {
+          parser.advance();
+          return Ok(sequence);
+        }
+        Some(t) if t == sep => {
+          parser.advance();
+        }
+        Some(_) => return Err(Error::MissingToken(closing)),
+        None => return Err(Error::UnexpectedToken(Token::Eof)),
+      }
+    },
+    None => loop {
+      if parser.is_at_end() {
+        return Err(Error::UnexpectedToken(Token::Eof));
+      }
+      sequence.push((option.parse_fn)(parser)?);
+      match parser.peek() {
+        Some(t) if t == closing => {
+          parser.advance();
+          return Ok(sequence);
+        }
+        Some(_) => continue,
+        None => return Err(Error::UnexpectedToken(Token::Eof)),
+      }
+    },
+  };
 }
 
 fn parse_factor(parser: &mut Parser) -> ParseResult<Expr> {
@@ -403,19 +546,18 @@ fn parse_equality(parser: &mut Parser) -> ParseResult<Expr> {
 }
 
 fn parse_block(parser: &mut Parser) -> ParseResult<Stmt> {
-  // ignore the left brace
-  parser.advance();
+  let stmts = parse_sequence(
+    parser,
+    ParseSequenceOptions {
+      opening: Some(Token::LeftBrace),
+      closing: Some(Token::RightBrace),
+      // the statments itself have already handle semicolons
+      seperator: None,
+      parse_fn: parse_statement,
+    },
+  )?;
 
-  let mut statements = vec![];
-  while !matches!(parser.peek(), Some(Token::RightBrace) | None) {
-    statements.push(parse_statement(parser)?);
-  }
-  if let Some(Token::RightBrace) = parser.peek() {
-    parser.advance();
-    Ok(Stmt::Block(statements))
-  } else {
-    Err(Error::MissingRightBrace)
-  }
+  Ok(Stmt::Block(stmts))
 }
 
 #[cfg(test)]
@@ -703,7 +845,7 @@ mod tests {
   }
 
   #[test]
-  fn test_block_test() {
+  fn test_block() {
     // {
     //   a = "something";
     //   {
@@ -899,4 +1041,136 @@ mod tests {
   //
   //   ];
   // }
+
+  #[test]
+  fn test_call() {
+    let tokens = vec![
+      Token::Identifier("fenction".into()),
+      Token::LeftParen,
+      Token::Number(1.0),
+      Token::Comma,
+      Token::String("Tututu".into()),
+      Token::RightParen,
+      Token::Semicolon,
+      Token::Eof,
+    ];
+    let (stmts, errors) = parse(tokens);
+    assert!(errors.is_empty());
+    assert!(stmts.len() == 1);
+    let expected = Stmt::Expression(Expr::Call(
+      Box::new(Expr::Variable("fenction".into())),
+      vec![
+        Expr::Literal(Literal::Number(1.0)),
+        Expr::Literal(Literal::String("Tututu".into())),
+      ],
+    ));
+    assert!(stmts == vec![expected]);
+  }
+
+  #[test]
+  fn test_sequence() {
+    let tokens = vec![
+      Token::Number(1.0),
+      Token::Comma,
+      Token::Number(2.0),
+      Token::Comma,
+      Token::Number(3.0),
+      Token::RightParen,
+      Token::Eof,
+    ];
+    let mut parser = Parser::new(tokens);
+    let stmts = parse_sequence(
+      &mut parser,
+      ParseSequenceOptions {
+        opening: None,
+        closing: Some(Token::RightParen),
+        seperator: Some(Token::Comma),
+        parse_fn: parse_expression,
+      },
+    )
+    .unwrap();
+    assert! {
+      stmts == vec![
+        Expr::Literal(Literal::Number(1.0)),
+        Expr::Literal(Literal::Number(2.0)),
+        Expr::Literal(Literal::Number(3.0)),
+      ]
+    }
+  }
+
+  #[test]
+  fn test_invalid_call() {
+    let tokens = vec![
+      Token::Identifier("fenction".into()),
+      Token::LeftParen,
+      Token::Number(1.0),
+      Token::Comma,
+      Token::RightParen,
+      Token::Semicolon,
+      Token::Eof,
+    ];
+    let (stmts, errors) = parse(tokens);
+    assert!(errors.len() == 1);
+    assert!(stmts.is_empty());
+    assert!(errors[0] == Error::UnexpectedToken(Token::RightParen));
+  }
+
+  #[test]
+  fn test_fn_declaration() {
+    // fun add(a, b) {
+    //   print a + b;
+    //   print "working fine";
+    // }
+    let tokens = vec![
+      Token::Fun,
+      Token::Identifier("add".into()),
+      Token::LeftParen,
+      Token::Identifier("a".into()),
+      Token::Comma,
+      Token::Identifier("b".into()),
+      Token::RightParen,
+      Token::LeftBrace,
+      Token::Print,
+      Token::Identifier("a".into()),
+      Token::Plus,
+      Token::Identifier("b".into()),
+      Token::Semicolon,
+      Token::Print,
+      Token::String("working fine".into()),
+      Token::Semicolon,
+      Token::RightBrace,
+      Token::Eof,
+    ];
+    let (stmts, errors) = parse(tokens);
+    assert!(errors.is_empty());
+    assert!(stmts.len() == 1);
+    let expected = Stmt::Function(
+      "add".into(),
+      vec!["a".into(), "b".into()],
+      Box::new(Stmt::Block(vec![
+        Stmt::Print(Expr::Binary(
+          Box::new(Expr::Variable("a".into())),
+          Operator::Plus,
+          Box::new(Expr::Variable("b".into())),
+        )),
+        Stmt::Print(Expr::Literal(Literal::String("working fine".into()))),
+      ])),
+    );
+    assert!(stmts == vec![expected]);
+  }
+
+  #[test]
+  fn test_return() {
+    let tokens = vec![
+      Token::Return,
+      Token::Number(1.0),
+      Token::Semicolon,
+      Token::Eof,
+    ];
+    let (stmts, errors) = parse(tokens);
+    assert!(errors.is_empty());
+    assert!(stmts.len() == 1);
+    let expected = vec![Stmt::Return(Some(Expr::Literal(Literal::Number(1.0))))];
+    assert!(stmts == expected);
+  }
 }

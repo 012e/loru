@@ -44,6 +44,7 @@ pub enum Expr {
   Variable(Identifier),
   Assign(Identifier, Box<Expr>),
   Logical(Box<Expr>, LogicalOperator, Box<Expr>),
+  Call(Box<Expr>, Vec<Expr>),
 }
 
 pub type Identifier = String;
@@ -55,6 +56,8 @@ pub enum Stmt {
   Var(Identifier, Option<Expr>),
   Block(Vec<Stmt>),
   If(Expr, Box<Stmt>, Option<Box<Stmt>>),
+  Function(Identifier, Vec<Identifier>, Box<Stmt>),
+  Return(Option<Expr>),
   While(Expr, Box<Stmt>),
   For(Option<Box<Stmt>>, Option<Expr>, Option<Expr>, Box<Stmt>),
   Break,
@@ -195,7 +198,10 @@ impl std::fmt::Display for Expr {
       }
       Expr::Variable(name) => write!(f, "{}", name),
       Expr::Assign(name, value) => write!(f, "(assign {} = {})", name, value),
-      Expr::Logical(l, op, r) => write!(f, "({} {} {})", op, r, l),
+      Expr::Logical(l, op, r) => {
+        write!(f, "({} {} {})", op, r, l)
+      }
+      Expr::Call(_, _) => todo!(),
     }
   }
 }
@@ -207,7 +213,7 @@ impl std::fmt::Debug for Expr {
         write!(f, "({:?} {:?} {:?})", left, operator, right)
       }
       Expr::Grouping(expr) => {
-        write!(f, "(group {:?})", expr)
+        write!(f, "(group\n\t{:?})", expr)
       }
       Expr::Literal(token) => {
         write!(f, "{:?}", token)
@@ -218,6 +224,7 @@ impl std::fmt::Debug for Expr {
       Expr::Variable(name) => write!(f, "{:?}", name),
       Expr::Assign(ident, value) => write!(f, "(assign {:?} `{:?}`)", ident, value),
       Expr::Logical(_, _, _) => todo!(),
+      Expr::Call(_, _) => todo!(),
     }
   }
 }
@@ -246,6 +253,8 @@ impl std::fmt::Debug for Stmt {
       }
       Stmt::Break => todo!(),
       Stmt::Continue => todo!(),
+      Stmt::Function(_, _, _) => todo!(),
+      Stmt::Return(_) => todo!(),
     }
   }
 }

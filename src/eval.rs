@@ -1,5 +1,3 @@
-use std::ops::ControlFlow;
-
 use crate::{
   ast::{self, Expr, Literal, LogicalOperator, Operator, Stmt, UnaryOperator},
   environment::Environment,
@@ -104,6 +102,14 @@ impl Evalable for ast::Expr {
           Ok(Literal::True)
         }
       },
+      Expr::Binary(_, _, _) => todo!(),
+      Expr::Grouping(_) => todo!(),
+      Expr::Literal(_) => todo!(),
+      Expr::Unary(_, _) => todo!(),
+      Expr::Variable(_) => todo!(),
+      Expr::Assign(_, _) => todo!(),
+      Expr::Logical(_, _, _) => todo!(),
+      Expr::Call(_, _) => todo!(),
     }
   }
 }
@@ -224,6 +230,8 @@ impl Evalable for Stmt {
       }
       Stmt::Break => return Ok(Flow::Break),
       Stmt::Continue => return Ok(Flow::Continue),
+      Stmt::Function(_, _, _) => todo!(),
+      Stmt::Return(_) => todo!(),
     };
     Ok(Flow::None)
   }

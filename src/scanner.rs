@@ -100,6 +100,7 @@ impl<'a> Scanner<'a> {
       "var" => Ok(Some(Token::Var)),
       "while" => Ok(Some(Token::While)),
       "break" => Ok(Some(Token::Break)),
+      "continue" => Ok(Some(Token::Continue)),
       name => Ok(Some(Token::Identifier(name.into()))),
     }
   }
@@ -338,9 +339,7 @@ if (a != b) {
     };
     // assert_eq!(tokens.len(), expected_token.len());
     for (i, _) in tokens.iter().enumerate() {
-      println!("Testing token number {i}");
       assert_eq!(tokens[i], expected_token[i]);
-      println!("Token {:?} passed", tokens[i]);
     }
   }
 }

@@ -124,8 +124,8 @@ impl std::fmt::Display for Token {
       Token::True => f.write_str("true"),
       Token::Var => f.write_str("var"),
       Token::While => f.write_str("while"),
-      Token::Break => todo!(),
-      Token::Continue => todo!(),
+      Token::Break => f.write_str("break"),
+      Token::Continue => f.write_str("continue"),
     }
   }
 }
